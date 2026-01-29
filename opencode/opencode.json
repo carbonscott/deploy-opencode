@@ -38,10 +38,10 @@
       }
     }
   },
-  "model": "stanford/claude-4-sonnet",
+  "model": "stanford/claude-4-5-sonnet",
   "agent": {
     "coder": {
-      "model": "stanford/claude-4-sonnet"
+      "model": "stanford/claude-4-5-sonnet"
     }
   },
   "tui": {
