@@ -1,1 +1,6 @@
 .claude/settings.local.json
+
+# OpenCode generated files (reinstallable)
+opencode/node_modules/
+opencode/package.json
+opencode/bun.lock
