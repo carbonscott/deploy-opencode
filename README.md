@@ -54,8 +54,8 @@ rsync -av --exclude='node_modules' --exclude='package.json' --exclude='bun.lock'
 |---------|---------|
 | `opencode.json` | Main config (provider, models, theme) |
 | `agents/*.md` | Agent definitions (elog-copilot, daq-logs, etc.) |
-| `skills/*/SKILL.md` | Skill definitions (lcls-catalog, index-code) |
-| `agents/index-code`, `agents/lcls-catalog` | Symlinks to skills for @invocation |
+| `skills/*/SKILL.md` | Skill definitions (lcls-catalog, askcode) |
+| `agents/askcode`, `agents/lcls-catalog` | Symlinks to skills for @invocation |
 
 ## Syncing from Repo to Deployed
 

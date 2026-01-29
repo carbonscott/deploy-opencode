@@ -12,7 +12,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
 | `dev/opencode/skills/lcls-catalog/` | You | lcls-catalog skill |
-| `dev/opencode/skills/index-code/` | You | index-code skill (code indexing) |
+| `dev/opencode/skills/askcode/` | You | askcode skill (code indexing) |
 | `dev/data/confluence-doc/lcls-docs.db` | You | Confluence docs SQLite DB |
 | `dev/data/daq-logs/daq_logs.db` | You | DAQ error logs SQLite DB |
 | `dev/data/lcls-catalog/lcls_parquet/` | You | Catalog parquet files |
@@ -48,7 +48,7 @@ Deployed files are copies (not symlinks) from these source projects:
 | `agents/smartsheet.md` | Authored directly in deployed copy |
 | `tools/smartsheet/` | `git@github.com:carbonscott/smartsheet-db-scripts.git` |
 | `data/smartsheet/closeout_notes.db` | Cron job via `tools/smartsheet/scripts/smartsheet-cron.sh` (daily on sdfcron001) |
-| `skills/index-code/` | Authored directly in deployed copy |
+| `skills/askcode/` | Authored directly in deployed copy |
 | `tools/tree-sitter-db/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/fun/play-tree-sitter/tree-sitter-db/` |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
@@ -84,7 +84,7 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/confluence-doc/env.sh` defines `CONFLUENCE_DOC_APP_DIR` and `CONFLUENCE_DOC_DATA_DIR`; cron job runs every hour exporting Confluence docs to `data/confluence-doc/lcls-docs.db`
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/index-code -> ../skills/index-code`, `agents/lcls-catalog -> ../skills/lcls-catalog`
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`
 
 ## Agent/Skill Config Locations
 
@@ -120,9 +120,9 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 |------|------|
 | Deployed (opencode agent) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/agents/smartsheet.md` |
 
-### index-code
+### askcode
 
 | Copy | Path |
 |------|------|
-| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/index-code/SKILL.md` |
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/askcode/SKILL.md` |
 | Source (tool) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/fun/play-tree-sitter/tree-sitter-db/` |

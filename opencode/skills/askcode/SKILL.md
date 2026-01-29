@@ -1,9 +1,9 @@
 ---
-name: index-code
+name: askcode
 description: "Code indexing and navigation using tree-sitter. Use when users want to find functions, search code structure, analyze call graphs, find callers/callees, index a repository, or navigate code architecture for Python/C/C++ codebases."
 ---
 
-# index-code Skill
+# askcode Skill
 
 You are helping the user work with `tree-sitter-db`, a CLI tool for indexing Python/C/C++ codebases. It extracts functions, classes, imports, variables, and call graphs into SQLite. All analysis is done via SQL queries.
 
