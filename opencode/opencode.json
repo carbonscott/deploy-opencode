@@ -46,5 +46,15 @@
   },
   "tui": {
     "theme": "opencode"
+  },
+  "permission": {
+    "external_directory": {
+      "/sdf/group/lcls/ds/dm/apps/dev/software/**": "allow",
+      "/tmp/**": "allow"
+    },
+    "edit": {
+      "/sdf/group/lcls/ds/dm/apps/dev/software/**": "deny",
+      "/tmp/**": "deny"
+    }
   }
 }
