@@ -13,6 +13,10 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/agents/*.md` | You | Agent definitions |
 | `dev/opencode/skills/lcls-catalog/` | You | lcls-catalog skill |
 | `dev/opencode/skills/askcode/` | You | askcode skill (code indexing) |
+| `dev/opencode/skills/ask-lcls2/` | You | ask-lcls2 skill (lcls2/psana2 codebase) |
+| `dev/opencode/skills/ask-smalldata/` | You | ask-smalldata skill (smalldata_tools codebase) |
+| `dev/software/lcls2/` | You | lcls2 git repo with .agent_docs and .code-index.db |
+| `dev/software/smalldata_tools/` | You | smalldata_tools git repo with .agent_docs and .code-index.db |
 | `dev/data/confluence-doc/lcls-docs.db` | You | Confluence docs SQLite DB |
 | `dev/data/daq-logs/daq_logs.db` | You | DAQ error logs SQLite DB |
 | `dev/data/lcls-catalog/lcls_parquet/` | You | Catalog parquet files |
@@ -50,6 +54,14 @@ Deployed files are copies (not symlinks) from these source projects:
 | `data/smartsheet/closeout_notes.db` | Cron job via `tools/smartsheet/scripts/smartsheet-cron.sh` (daily on sdfcron001) |
 | `skills/askcode/` | Authored directly in deployed copy |
 | `tools/tree-sitter-db/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/fun/play-tree-sitter/tree-sitter-db/` |
+| `software/lcls2/` | `git@github.com:slac-lcls/lcls2.git` (full clone) |
+| `software/lcls2/.agent_docs/` | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/lcls2/.agent_docs/` |
+| `software/lcls2/.code-index.db` | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/lcls2/.code-index.db` |
+| `software/smalldata_tools/` | `git@github.com:slac-lcls/smalldata_tools.git` (full clone) |
+| `software/smalldata_tools/.agent_docs/` | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/smalldata_tools/.agent_docs/` |
+| `software/smalldata_tools/.code-index.db` | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/smalldata_tools/.code-index.db` |
+| `skills/ask-lcls2/` | Authored directly in deployed copy |
+| `skills/ask-smalldata/` | Authored directly in deployed copy |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
@@ -84,7 +96,8 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/confluence-doc/env.sh` defines `CONFLUENCE_DOC_APP_DIR` and `CONFLUENCE_DOC_DATA_DIR`; cron job runs every hour exporting Confluence docs to `data/confluence-doc/lcls-docs.db`
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`
+- The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
 
 ## Agent/Skill Config Locations
 
@@ -126,3 +139,23 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 |------|------|
 | Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/askcode/SKILL.md` |
 | Source (tool) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/fun/play-tree-sitter/tree-sitter-db/` |
+
+### ask-lcls2
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-lcls2/SKILL.md` |
+| Software repo | `/sdf/group/lcls/ds/dm/apps/dev/software/lcls2/` |
+| Agent docs | `/sdf/group/lcls/ds/dm/apps/dev/software/lcls2/.agent_docs/` |
+| Code index | `/sdf/group/lcls/ds/dm/apps/dev/software/lcls2/.code-index.db` |
+| Agent docs source | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/lcls2/.agent_docs/` |
+
+### ask-smalldata
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-smalldata/SKILL.md` |
+| Software repo | `/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools/` |
+| Agent docs | `/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools/.agent_docs/` |
+| Code index | `/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools/.code-index.db` |
+| Agent docs source | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/smalldata_tools/.agent_docs/` |
