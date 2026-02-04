@@ -1,5 +1,5 @@
 ---
-description: Search LCLS Confluence documentation database (392 pages covering data acquisition, analysis tools, detectors, experiment procedures). Use when users ask about LCLS docs, psana, ami, smalldata_tools, detector info, or data processing topics.
+description: Search LCLS Confluence documentation database (1591 pages covering data acquisition, analysis tools, detectors, experiment procedures, internal documentation). Use when users ask about LCLS docs, psana, ami, smalldata_tools, detector info, or data processing topics.
 mode: all
 tools:
   write: false
@@ -35,7 +35,7 @@ EOF
 
 ## Schema
 
-**Table: `documents`** (392 rows)
+**Table: `documents`** (1591 rows)
 Columns: id, file_path, title, confluence_page_id, confluence_url, version, last_modified, author, parent_page, parent_page_id, breadcrumb, summary, content, created_at, updated_at
 
 **FTS5 virtual table: `documents_fts`**
@@ -88,6 +88,7 @@ WHERE documents_fts MATCH 'detect*'
 
 ## Document Hierarchy
 
-Two top-level categories:
-- `LCLS Data Analysis` (344 docs) - psana1, smalldata_tools, summary plots
-- `LCLS-II Data Acquisition and Analysis` (48 docs) - psana2, ami
+Three top-level categories:
+- `LCLS Data Analysis` (599 docs) - psana1, smalldata_tools, summary plots
+- `LCLS Data Analysis - Internal` (932 docs) - internal documentation, release notes, DRP pipeline
+- `LCLS-II Data Acquisition and Analysis` (60 docs) - psana2, ami

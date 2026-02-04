@@ -9,6 +9,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | Path | Owner | Purpose |
 |------|-------|---------|
 | `etc/key.dat` | IT | API key (read-only for employees) |
+| `dev/bin/uv` | You | Shared uv binary (for lcls-catalog, tree-sitter-db, etc.) |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
 | `dev/opencode/skills/lcls-catalog/` | You | lcls-catalog skill |

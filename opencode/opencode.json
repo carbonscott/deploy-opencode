@@ -6,7 +6,7 @@
       "name": "Stanford AI Gateway",
       "options": {
         "baseURL": "https://aiapi-prod.stanford.edu/v1",
-        "apiKey": "{file:/sdf/group/lcls/ds/dm/apps/etc/key.dat}"
+        "apiKey": "{file:/sdf/group/lcls/ds/dm/apps/dev/env/key.dat}"
       },
       "models": {
         "claude-4-5-sonnet": {
@@ -50,10 +50,16 @@
   "permission": {
     "external_directory": {
       "/sdf/group/lcls/ds/dm/apps/dev/software/**": "allow",
+      "/sdf/group/lcls/ds/dm/apps/dev/tools/**": "allow",
+      "/sdf/group/lcls/ds/dm/apps/dev/data/**": "allow",
+      "/sdf/group/lcls/ds/dm/apps/dev/bin/**": "allow",
       "/tmp/**": "allow"
     },
     "edit": {
       "/sdf/group/lcls/ds/dm/apps/dev/software/**": "deny",
+      "/sdf/group/lcls/ds/dm/apps/dev/tools/**": "deny",
+      "/sdf/group/lcls/ds/dm/apps/dev/data/**": "deny",
+      "/sdf/group/lcls/ds/dm/apps/dev/bin/**": "deny",
       "/tmp/**": "deny"
     }
   }
