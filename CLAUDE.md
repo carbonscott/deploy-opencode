@@ -16,6 +16,9 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/askcode/` | You | askcode skill (code indexing) |
 | `dev/opencode/skills/ask-lcls2/` | You | ask-lcls2 skill (lcls2/psana2 codebase) |
 | `dev/opencode/skills/ask-smalldata/` | You | ask-smalldata skill (smalldata_tools codebase) |
+| `dev/opencode/skills/cuda-docs/` | You | cuda-docs skill (CUDA documentation search) |
+| `dev/opencode/skills/ask-slurm-s3df/` | You | ask-slurm-s3df skill (S3DF Slurm cluster assistant) |
+| `dev/data/cuda-docs/` | You | CUDA documentation markdown files (Best Practices, Runtime API, Driver API) |
 | `dev/software/lcls2/` | You | lcls2 git repo with .agent_docs and .code-index.db |
 | `dev/software/smalldata_tools/` | You | smalldata_tools git repo with .agent_docs and .code-index.db |
 | `dev/data/confluence-doc/lcls-docs.db` | You | Confluence docs SQLite DB |
@@ -63,6 +66,9 @@ Deployed files are copies (not symlinks) from these source projects:
 | `software/smalldata_tools/.code-index.db` | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/smalldata_tools/.code-index.db` |
 | `skills/ask-lcls2/` | Authored directly in deployed copy |
 | `skills/ask-smalldata/` | Authored directly in deployed copy |
+| `skills/cuda-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/cuda-docs/` |
+| `data/cuda-docs/*.md` | Static markdown files (no cron job needed) |
+| `skills/ask-slurm-s3df/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slurm-s3df/` |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
@@ -97,7 +103,7 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/confluence-doc/env.sh` defines `CONFLUENCE_DOC_APP_DIR` and `CONFLUENCE_DOC_DATA_DIR`; cron job runs every hour exporting Confluence docs to `data/confluence-doc/lcls-docs.db`
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
 
 ## Agent/Skill Config Locations
@@ -160,3 +166,19 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Agent docs | `/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools/.agent_docs/` |
 | Code index | `/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools/.code-index.db` |
 | Agent docs source | `/sdf/data/lcls/ds/prj/prjcwang31/results/software/smalldata_tools/.agent_docs/` |
+
+### cuda-docs
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/cuda-docs/SKILL.md` |
+| Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/cuda-docs/SKILL.md` |
+| Data files | `/sdf/group/lcls/ds/dm/apps/dev/data/cuda-docs/*.md` |
+
+### ask-slurm-s3df
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-slurm-s3df/SKILL.md` |
+| Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slurm-s3df/SKILL.md` |
+| Reference doc | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/docs/s3df-slurm-research.md` |
