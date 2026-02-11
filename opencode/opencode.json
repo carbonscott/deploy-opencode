@@ -11,6 +11,10 @@
       "models": {
         "claude-4-5-sonnet": {
           "name": "Claude 4.5 Sonnet",
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          },
           "cost": {
             "input": 3,
             "output": 15
