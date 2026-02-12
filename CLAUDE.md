@@ -10,6 +10,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 |------|-------|---------|
 | `etc/key.dat` | IT | API key (read-only for employees) |
 | `dev/bin/uv` | You | Shared uv binary (for lcls-catalog, tree-sitter-db, etc.) |
+| `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11); venvs symlink here instead of per-user `~/.local/share/uv/python/` |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
 | `dev/opencode/skills/lcls-catalog/` | You | lcls-catalog skill |
@@ -105,6 +106,27 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
 - **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
+
+## uv for Shared Deployment
+
+The shared tools use `uv` to manage Python projects. Three settings are critical for multi-user access:
+
+1. **`UV_PYTHON_INSTALL_DIR="/sdf/group/lcls/ds/dm/apps/dev/python"`** — Python interpreters must live in a shared location, not `~/.local/share/uv/python/` (which is owner-only). Each env.sh exports this. When adding a new Python version:
+   ```bash
+   UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python uv python install 3.XX
+   chgrp -R ps-data /sdf/group/lcls/ds/dm/apps/dev/python && chmod -R g+rX /sdf/group/lcls/ds/dm/apps/dev/python
+   ```
+
+2. **`UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache-$USER}"`** — `uv` needs write access to its cache. Each user gets their own cache in `/tmp/`. Cron jobs can override via `env.local`.
+
+3. **`uv run --frozen`** — Wrapper functions (`lcat`, `tsdb`) use `--frozen` so `uv run` doesn't try to sync/write to the shared `.venv`. The venv is pre-built by the maintainer; users only read from it.
+
+After creating or updating a venv, fix permissions:
+```bash
+chgrp -R ps-data .venv && chmod -R g+rX .venv
+```
+
+See `docs/incident-permissions-fix-2026-02-12.md` for full context on these requirements.
 
 ## Agent/Skill Config Locations
 
