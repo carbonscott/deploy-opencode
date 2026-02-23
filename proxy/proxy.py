@@ -17,22 +17,34 @@ LISTEN_PORT = 4000
 UPSTREAM_HOST = "aiapi-prod.stanford.edu"
 UPSTREAM_PORT = 443
 KEY_FILE = "/sdf/group/lcls/ds/dm/apps/dev/env/key.dat"
+PROXY_KEY_FILE = Path(__file__).parent / "run" / "proxy-key.dat"
 
 
-def load_api_key():
-    key = Path(KEY_FILE).read_text().strip()
+def load_key(path, name):
+    p = Path(path)
+    if not p.exists():
+        print(f"Error: {name} not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    key = p.read_text().strip()
     if not key:
-        print(f"Error: empty key file: {KEY_FILE}", file=sys.stderr)
+        print(f"Error: {name} is empty: {path}", file=sys.stderr)
         sys.exit(1)
     return key
 
 
-API_KEY = load_api_key()
+API_KEY = load_key(KEY_FILE, "API key file")
+PROXY_KEY = load_key(PROXY_KEY_FILE, "proxy key file")
 SSL_CTX = ssl.create_default_context(cafile="/etc/pki/tls/certs/ca-bundle.crt")
 
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_request(self):
+        # Authenticate: check proxy key
+        auth = self.headers.get("Authorization", "")
+        if auth != f"Bearer {PROXY_KEY}":
+            self.send_error(401, "Unauthorized: invalid or missing proxy key")
+            return
+
         # Read request body if present
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length) if content_length else None
@@ -89,7 +101,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
-    server = http.server.HTTPServer((LISTEN_HOST, LISTEN_PORT), ProxyHandler)
+    server = http.server.ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), ProxyHandler)
     print(f"Proxy listening on http://{LISTEN_HOST}:{LISTEN_PORT}")
     print(f"Forwarding to https://{UPSTREAM_HOST} (key injected)")
     try:

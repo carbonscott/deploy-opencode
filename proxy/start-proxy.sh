@@ -14,6 +14,16 @@ fi
 
 mkdir -p "$RUN_DIR"
 
+# Check proxy key exists
+PROXY_KEY_FILE="$RUN_DIR/proxy-key.dat"
+if [ ! -f "$PROXY_KEY_FILE" ]; then
+    echo "Error: proxy key file not found: $PROXY_KEY_FILE"
+    echo "Create it with a chosen key, e.g.:"
+    echo "  echo 'my-secret-proxy-key' > $PROXY_KEY_FILE"
+    echo "  chmod 600 $PROXY_KEY_FILE"
+    exit 1
+fi
+
 # Start proxy in background
 "$PYTHON" "$SCRIPT_DIR/proxy.py" > "$RUN_DIR/proxy.log" 2>&1 &
 echo $! > "$PID_FILE"

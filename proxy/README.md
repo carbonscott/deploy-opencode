@@ -1,6 +1,6 @@
 # API Key Proxy
 
-A minimal reverse proxy that injects the API key into upstream requests, so users can access the LLM API without reading the key file directly.
+A minimal reverse proxy that injects the API key into upstream requests, so users can access the LLM API without reading the key file directly. Requires a proxy key for access control.
 
 ## How it works
 
@@ -8,7 +8,8 @@ A minimal reverse proxy that injects the API key into upstream requests, so user
 opencode                    proxy (localhost:4000)           Stanford AI Gateway
    |                              |                                |
    |-- POST /v1/messages -------->|                                |
-   |   (no API key)               |                                |
+   |   + Authorization: proxy-key |                                |
+   |                              |  (validates proxy key)         |
    |                              |-- POST /v1/messages ---------->|
    |                              |   + Authorization: Bearer <key>|
    |                              |                                |
@@ -16,12 +17,21 @@ opencode                    proxy (localhost:4000)           Stanford AI Gateway
    |<-- streaming response -------|                                |
 ```
 
-The proxy reads the API key from the key file at startup and adds it to every request. Users never see the key.
+The proxy validates the incoming proxy key, then replaces it with the real API key before forwarding. Users only know the proxy key, never the API key.
 
-## Usage
+## Setup
+
+### 1. Create the proxy key
 
 ```bash
-# Start
+mkdir -p proxy/run
+echo 'choose-a-secret-proxy-key' > proxy/run/proxy-key.dat
+chmod 600 proxy/run/proxy-key.dat
+```
+
+### 2. Start the proxy
+
+```bash
 ./proxy/start-proxy.sh
 
 # Stop
@@ -31,16 +41,18 @@ The proxy reads the API key from the key file at startup and adds it to every re
 tail proxy/run/proxy.log
 ```
 
-## opencode configuration
+### 3. Configure opencode
 
 Change two fields in your `opencode.json` provider options:
 
 ```json
 {
   "baseURL": "http://127.0.0.1:4000/v1",
-  "apiKey": "proxy"
+  "apiKey": "<your-proxy-key>"
 }
 ```
+
+Where `<your-proxy-key>` matches the contents of `proxy/run/proxy-key.dat`.
 
 Previously these were:
 
@@ -53,8 +65,8 @@ Previously these were:
 
 ## Limitations
 
-- **Single-threaded** — handles one request at a time (Python `http.server`). Fine for individual use, not for concurrent team access.
 - **No TLS** — proxy listens on plain HTTP. Only safe when proxy and client are on the same machine (`127.0.0.1`).
+- **Thread-per-request** — uses Python `ThreadingHTTPServer`. Handles concurrent users fine for a small team, but not high-throughput production workloads.
 
 ## Production path
 
