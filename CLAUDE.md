@@ -13,13 +13,16 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11); venvs symlink here instead of per-user `~/.local/share/uv/python/` |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
+| `dev/opencode/commands/*.md` | You | Slash commands (approval, clarify, taskify) |
 | `dev/opencode/skills/lcls-catalog/` | You | lcls-catalog skill |
 | `dev/opencode/skills/askcode/` | You | askcode skill (code indexing) |
 | `dev/opencode/skills/ask-lcls2/` | You | ask-lcls2 skill (lcls2/psana2 codebase) |
 | `dev/opencode/skills/ask-smalldata/` | You | ask-smalldata skill (smalldata_tools codebase) |
 | `dev/opencode/skills/cuda-docs/` | You | cuda-docs skill (CUDA documentation search) |
 | `dev/opencode/skills/ask-slurm-s3df/` | You | ask-slurm-s3df skill (S3DF Slurm cluster assistant) |
+| `dev/opencode/skills/nano-isaac/` | You | nano-isaac skill (AI catalysis research assistant for AP-XPS) |
 | `dev/data/cuda-docs/` | You | CUDA documentation markdown files (Best Practices, Runtime API, Driver API) |
+| `dev/data/nano-isaac/` | You | nanoISAAC data files (JSON databases, Python scripts, experimental data) |
 | `dev/software/lcls2/` | You | lcls2 git repo with .agent_docs and .code-index.db |
 | `dev/software/smalldata_tools/` | You | smalldata_tools git repo with .agent_docs and .code-index.db |
 | `dev/data/confluence-doc/lcls-docs.db` | You | Confluence docs SQLite DB |
@@ -32,6 +35,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/tools/daq-logs/` | You | DAQ log sync scripts (git clone) |
 | `dev/tools/elog-copilot/` | You | elogfetch uv project |
 | `dev/tools/smartsheet/` | You | Smartsheet closeout sync scripts (git clone) |
+| `dev/tools/nano-isaac/` | You | nano-isaac uv project (DTCS runtime for XPS simulations) |
 | `dev/tools/tree-sitter-db/` | You | Code indexing tool (uv project) |
 
 Employees set `OPENCODE_CONFIG_DIR=/sdf/group/lcls/ds/dm/apps/dev/opencode` to use this.
@@ -70,6 +74,10 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/cuda-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/cuda-docs/` |
 | `data/cuda-docs/*.md` | Static markdown files (no cron job needed) |
 | `skills/ask-slurm-s3df/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slurm-s3df/` |
+| `commands/*.md` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/opencode/commands/` |
+| `skills/nano-isaac/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/nano-isaac/` (skill + sub-skills + references) |
+| `data/nano-isaac/` | nanoISAAC repo data files (copied by `deploy-nano-isaac.sh`) |
+| `tools/nano-isaac/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/nano-isaac/tool/` (env.sh + pyproject.toml) |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
@@ -104,7 +112,8 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/confluence-doc/env.sh` defines `CONFLUENCE_DOC_APP_DIR` and `CONFLUENCE_DOC_DATA_DIR`; cron job runs every hour exporting Confluence docs to `data/confluence-doc/lcls-docs.db`
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`
+- The `tools/nano-isaac/env.sh` defines `NANO_ISAAC_APP_DIR` and `NANO_ISAAC_DATA_DIR`; provides `nano_isaac_run` wrapper for DTCS runtime (no cron job)
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
 
 ## uv for Shared Deployment
@@ -204,3 +213,21 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-slurm-s3df/SKILL.md` |
 | Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slurm-s3df/SKILL.md` |
 | Reference doc | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/docs/s3df-slurm-research.md` |
+
+### nano-isaac
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/nano-isaac/SKILL.md` |
+| Source (skill + tool + scripts) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/nano-isaac/` |
+| Upstream repo | `git@github.com:ISAAC-DOE/nanoISAAC.git` |
+| Data files | `/sdf/group/lcls/ds/dm/apps/dev/data/nano-isaac/` |
+| Tool env | `/sdf/group/lcls/ds/dm/apps/dev/tools/nano-isaac/` |
+
+### commands (approval, clarify, taskify, clarify-before-research)
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode commands) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/commands/*.md` |
+| Source (opencode commands) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/opencode/commands/*.md` |
+| Source (claude commands) | `/sdf/home/c/cwang31/.claude/commands/*.md` (personal Claude Code originals) |
