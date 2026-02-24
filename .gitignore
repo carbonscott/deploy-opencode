@@ -7,3 +7,11 @@ opencode/bun.lock
 
 # Proxy runtime files (contain API key, pid, logs)
 proxy/run/
+
+# Runtime artifacts and logs
+.confluence_progress.json
+confluence_export.log
+*.swp
+
+# External dependencies (not managed by this repo)
+externals/

@@ -1,0 +1,17 @@
+[project]
+name = "nano-isaac"
+version = "0.2.0"
+description = "AI agent for X-ray spectroscopy analysis"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "dtcs",
+    "vamas",
+    "pandas>=2.0.0",
+    "numpy",
+    "matplotlib",
+    "setuptools<81",
+    "ipython",
+]
+
+[tool.uv.sources]
+dtcs = { git = "https://github.com/QianGroupPage/DTCS-v.01" }
