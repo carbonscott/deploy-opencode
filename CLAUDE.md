@@ -10,6 +10,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 |------|-------|---------|
 | `etc/key.dat` | IT | API key (read-only for employees) |
 | `dev/bin/uv` | You | Shared uv binary (for lcls-catalog, tree-sitter-db, etc.) |
+| `dev/bin/docs-index` | You | Shared docs-index script (FTS5 indexer for doc collections) |
 | `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11); venvs symlink here instead of per-user `~/.local/share/uv/python/` |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
@@ -21,6 +22,10 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/cuda-docs/` | You | cuda-docs skill (CUDA documentation search) |
 | `dev/opencode/skills/ask-slurm-s3df/` | You | ask-slurm-s3df skill (S3DF Slurm cluster assistant) |
 | `dev/opencode/skills/nano-isaac/` | You | nano-isaac skill (AI catalysis research assistant for AP-XPS) |
+| `dev/opencode/skills/docs-search/` | You | docs-search skill (documentation search strategy using docs-index) |
+| `dev/opencode/skills/ask-s3df/` | You | ask-s3df skill (S3DF documentation assistant) |
+| `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
+| `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
 | `dev/data/cuda-docs/` | You | CUDA documentation markdown files (Best Practices, Runtime API, Driver API) |
 | `dev/data/nano-isaac/` | You | nanoISAAC data files (JSON databases, Python scripts, experimental data) |
 | `dev/software/lcls2/` | You | lcls2 git repo with .agent_docs and .code-index.db |
@@ -74,6 +79,11 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/cuda-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/cuda-docs/` |
 | `data/cuda-docs/*.md` | Static markdown files (no cron job needed) |
 | `skills/ask-slurm-s3df/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slurm-s3df/` |
+| `skills/docs-search/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/docs-search/` |
+| `bin/docs-index` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/docs-search/scripts/docs-index` |
+| `skills/ask-s3df/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-s3df/` |
+| `data/sdf-docs/` | `https://github.com/slaclab/sdf-docs.git` (branch: prod); cron via `tools/sdf-docs/scripts/sdf-docs-cron.sh` (daily) |
+| `tools/sdf-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-s3df/tools/` |
 | `commands/*.md` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/opencode/commands/` |
 | `skills/nano-isaac/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/nano-isaac/` (skill + sub-skills + references) |
 | `data/nano-isaac/` | nanoISAAC repo data files (copied by `deploy-nano-isaac.sh`) |
@@ -100,6 +110,10 @@ rsync -a --exclude='.uv-cache' \
 # Smartsheet closeout DB — managed by cron (daily via tools/smartsheet/scripts/smartsheet-cron.sh)
 # No manual copy needed. To check status:
 #   tail /sdf/group/lcls/ds/dm/apps/dev/data/smartsheet/cron.log
+
+# sdf-docs — managed by cron (daily via tools/sdf-docs/scripts/sdf-docs-cron.sh)
+# No manual copy needed. To check status:
+#   tail /sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs/cron.log
 ```
 
 ## Key Config Details
@@ -113,7 +127,8 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
 - The `tools/nano-isaac/env.sh` defines `NANO_ISAAC_APP_DIR` and `NANO_ISAAC_DATA_DIR`; provides `nano_isaac_run` wrapper for DTCS runtime (no cron job)
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`
+- The `tools/sdf-docs/env.sh` defines `SDF_DOCS_APP_DIR` and `SDF_DOCS_DATA_DIR`; cron job runs daily syncing sdf-docs repo and rebuilding FTS5 search index
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
 
 ## uv for Shared Deployment
@@ -223,6 +238,25 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Upstream repo | `git@github.com:ISAAC-DOE/nanoISAAC.git` |
 | Data files | `/sdf/group/lcls/ds/dm/apps/dev/data/nano-isaac/` |
 | Tool env | `/sdf/group/lcls/ds/dm/apps/dev/tools/nano-isaac/` |
+
+### ask-s3df
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-s3df/SKILL.md` |
+| Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-s3df/SKILL.md` |
+| Data (git clone) | `/sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs/` |
+| Cron tools | `/sdf/group/lcls/ds/dm/apps/dev/tools/sdf-docs/` |
+| Cron tools source | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-s3df/tools/` |
+
+### docs-search
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/docs-search/SKILL.md` |
+| Deployed (script) | `/sdf/group/lcls/ds/dm/apps/dev/bin/docs-index` |
+| Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/docs-search/SKILL.md` |
+| Source (script) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/docs-search/scripts/docs-index` |
 
 ### commands (approval, clarify, taskify, clarify-before-research)
 
