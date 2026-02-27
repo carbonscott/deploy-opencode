@@ -24,6 +24,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/nano-isaac/` | You | nano-isaac skill (AI catalysis research assistant for AP-XPS) |
 | `dev/opencode/skills/docs-search/` | You | docs-search skill (documentation search strategy using docs-index) |
 | `dev/opencode/skills/ask-s3df/` | You | ask-s3df skill (S3DF documentation assistant) |
+| `dev/opencode/skills/find-rings/` | You | find-rings skill (diffraction ring detection for detector calibration) |
 | `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
 | `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
 | `dev/data/cuda-docs/` | You | CUDA documentation markdown files (Best Practices, Runtime API, Driver API) |
@@ -38,9 +39,10 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/tools/confluence-doc/` | You | Confluence export pipeline (git repo) |
 | `dev/tools/lcls-catalog/` | You | lcls-catalog uv project |
 | `dev/tools/daq-logs/` | You | DAQ log sync scripts (git clone) |
-| `dev/tools/elog-copilot/` | You | elogfetch uv project |
+| `dev/tools/elog-copilot/` | You | elogfetch uv project (**pinned at v1.0.0-stable, detached HEAD — do NOT git pull**) |
 | `dev/tools/smartsheet/` | You | Smartsheet closeout sync scripts (git clone) |
 | `dev/tools/nano-isaac/` | You | nano-isaac uv project (DTCS runtime for XPS simulations) |
+| `dev/tools/find-rings/` | You | find-rings uv project (numpy + Pillow for ring detection) |
 | `dev/tools/tree-sitter-db/` | You | Code indexing tool (uv project) |
 
 Employees set `OPENCODE_CONFIG_DIR=/sdf/group/lcls/ds/dm/apps/dev/opencode` to use this.
@@ -88,6 +90,8 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/nano-isaac/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/nano-isaac/` (skill + sub-skills + references) |
 | `data/nano-isaac/` | nanoISAAC repo data files (copied by `deploy-nano-isaac.sh`) |
 | `tools/nano-isaac/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/nano-isaac/tool/` (env.sh + pyproject.toml) |
+| `skills/find-rings/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/find-rings/` (skill + references + scripts) |
+| `tools/find-rings/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/find-rings/tool/` (env.sh + pyproject.toml) |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
@@ -127,8 +131,9 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
 - The `tools/nano-isaac/env.sh` defines `NANO_ISAAC_APP_DIR` and `NANO_ISAAC_DATA_DIR`; provides `nano_isaac_run` wrapper for DTCS runtime (no cron job)
+- The `tools/find-rings/env.sh` defines `FIND_RINGS_APP_DIR`; provides `find_rings_run` wrapper for ring detection (no cron job)
 - The `tools/sdf-docs/env.sh` defines `SDF_DOCS_APP_DIR` and `SDF_DOCS_DATA_DIR`; cron job runs daily syncing sdf-docs repo and rebuilding FTS5 search index
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`, `agents/find-rings -> ../skills/find-rings`
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
 
 ## uv for Shared Deployment
@@ -179,6 +184,13 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Deployed (opencode agent) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/agents/elog-copilot.md` |
 | Source (opencode agent) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/elog-copilot-skills/.opencode/agents/elog-copilot.md` |
 | Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/elog-copilot-skills/.claude/skills/elog-copilot/SKILL.md` |
+
+**Deployed tools frozen (2026-02-25):** The deployed `tools/elog-copilot/` directory is pinned at tag `v1.0.0-stable` (commit `4dc1759`) with detached HEAD to prevent accidental `git pull`. The elogfetch repo has 12+ open PRs for a major refactor (async, SQLAlchemy/Alembic, gssapi). Review and merge PRs on GitHub or in the source dir — never git pull in the deployed dir. Upgrade procedure:
+1. Disable cron: `tools/elog-copilot/scripts/elog-cron.sh disable`
+2. Update code: `cd tools/elog-copilot && git fetch origin && git checkout v<new-tag> --detach`
+3. Rebuild venv: `uv sync && chgrp -R ps-data .venv && chmod -R g+rX .venv`
+4. Test: `scripts/elog-cron.sh test`
+5. Re-enable cron: `scripts/elog-cron.sh enable`
 
 ### smartsheet
 
@@ -257,6 +269,14 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Deployed (script) | `/sdf/group/lcls/ds/dm/apps/dev/bin/docs-index` |
 | Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/docs-search/SKILL.md` |
 | Source (script) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/docs-search/scripts/docs-index` |
+
+### find-rings
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/find-rings/SKILL.md` |
+| Source (skill + tool + scripts) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/find-rings/` |
+| Tool env | `/sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/` |
 
 ### commands (approval, clarify, taskify, clarify-before-research)
 
