@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
 """Minimal reverse proxy that injects an API key into upstream requests.
 
-Listens on localhost:4000 and forwards all requests to the Stanford AI Gateway,
-adding the Authorization header so users never need the key.
+Forwards all requests to the Stanford AI Gateway, adding the Authorization
+header so users never need the real key. Users authenticate with a proxy key.
+
+Configuration via environment variables:
+  PROXY_HOST          Listen address (default: 0.0.0.0)
+  PROXY_PORT          Listen port (default: 4000)
+  PROXY_API_KEY_FILE  Path to real API key (default: /sdf/group/lcls/ds/dm/apps/dev/env/key.dat)
+  PROXY_KEY_FILE      Path to proxy key (default: ./run/proxy-key.dat)
 """
 
 import http.server
 import http.client
+import os
 import ssl
 import sys
-import threading
 from pathlib import Path
 
-LISTEN_HOST = "127.0.0.1"
-LISTEN_PORT = 4000
+LISTEN_HOST = os.environ.get("PROXY_HOST", "0.0.0.0")
+LISTEN_PORT = int(os.environ.get("PROXY_PORT", "4000"))
 UPSTREAM_HOST = "aiapi-prod.stanford.edu"
 UPSTREAM_PORT = 443
-KEY_FILE = "/sdf/group/lcls/ds/dm/apps/dev/env/key.dat"
-PROXY_KEY_FILE = Path(__file__).parent / "run" / "proxy-key.dat"
+KEY_FILE = os.environ.get("PROXY_API_KEY_FILE", "/sdf/group/lcls/ds/dm/apps/dev/env/key.dat")
+PROXY_KEY_FILE = os.environ.get("PROXY_KEY_FILE", str(Path(__file__).parent / "run" / "proxy-key.dat"))
 
 
 def load_key(path, name):
@@ -39,6 +45,14 @@ SSL_CTX = ssl.create_default_context(cafile="/etc/pki/tls/certs/ca-bundle.crt")
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_request(self):
+        # Health check — no auth required
+        if self.command == "GET" and self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok\n")
+            return
+
         # Authenticate: check proxy key
         auth = self.headers.get("Authorization", "")
         if auth != f"Bearer {PROXY_KEY}":
