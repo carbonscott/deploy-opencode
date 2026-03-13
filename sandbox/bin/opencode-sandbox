@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# Launch OpenCode inside an Apptainer security sandbox.
+#
+# Usage:
+#   opencode-sandbox [OPTIONS] [-- OPENCODE_ARGS...]
+#
+# Options:
+#   --no-sandbox    Bypass the sandbox (run OpenCode directly)
+#   --data PATH     Add an extra read-only bind mount (repeatable)
+#   --rw PATH       Add an extra read-write bind mount (repeatable)
+#   --dry-run       Print the apptainer command without executing
+#   --help          Show this help message
+#
+# Environment variables:
+#   OPENCODE_SANDBOX_SIF    Path to SIF (default: alongside this script)
+#   OPENCODE_SANDBOX_EXTRA  Colon-separated extra read-only bind paths
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SIF="${OPENCODE_SANDBOX_SIF:-${SCRIPT_DIR}/opencode-sandbox.sif}"
+
+# --- Parse arguments ---
+NO_SANDBOX=false
+DRY_RUN=false
+EXTRA_RO_BINDS=()
+EXTRA_RW_BINDS=()
+OPENCODE_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-sandbox)
+            NO_SANDBOX=true
+            shift
+            ;;
+        --data)
+            [[ $# -lt 2 ]] && echo "Error: --data requires a path" >&2 && exit 1
+            EXTRA_RO_BINDS+=("$2")
+            shift 2
+            ;;
+        --rw)
+            [[ $# -lt 2 ]] && echo "Error: --rw requires a path" >&2 && exit 1
+            EXTRA_RW_BINDS+=("$2")
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --help)
+            head -20 "$0" | grep '^#' | sed 's/^# \?//'
+            exit 0
+            ;;
+        --)
+            shift
+            OPENCODE_ARGS+=("$@")
+            break
+            ;;
+        *)
+            OPENCODE_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Parse OPENCODE_SANDBOX_EXTRA env var
+if [[ -n "${OPENCODE_SANDBOX_EXTRA:-}" ]]; then
+    IFS=':' read -ra _extra <<< "$OPENCODE_SANDBOX_EXTRA"
+    EXTRA_RO_BINDS+=("${_extra[@]}")
+fi
+
+# --- No-sandbox escape hatch ---
+if $NO_SANDBOX; then
+    echo "[sandbox] Bypassing sandbox — running OpenCode directly." >&2
+    exec opencode "${OPENCODE_ARGS[@]}"
+fi
+
+# --- Validate SIF ---
+if [[ ! -f "$SIF" ]]; then
+    echo "Error: SIF not found: $SIF" >&2
+    echo "Run build.sh or set OPENCODE_SANDBOX_SIF." >&2
+    exit 1
+fi
+
+# --- Set up scratch directories ---
+SCRATCH_BASE="/tmp/${USER}/opencode-sandbox"
+SCRATCH_HOME="${SCRATCH_BASE}/home"
+SCRATCH_TMP="${SCRATCH_BASE}/tmp"
+mkdir -p "$SCRATCH_HOME" "$SCRATCH_TMP"
+
+# --- Copy git config so commits have correct author ---
+if [[ -f "${HOME}/.gitconfig" ]]; then
+    cp "${HOME}/.gitconfig" "${SCRATCH_HOME}/.gitconfig" 2>/dev/null || true
+fi
+
+# --- OpenCode config (always use shared config inside sandbox) ---
+OPENCODE_CONFIG_DIR="/sdf/group/lcls/ds/dm/apps/dev/opencode"
+
+# --- Resolve opencode binary (shell function not available inside container) ---
+OPENCODE_BIN_DIR="/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin"
+OPENCODE_BIN="${OPENCODE_BIN_DIR}/opencode"
+if [[ ! -x "$OPENCODE_BIN" ]]; then
+    echo "Error: opencode binary not found: $OPENCODE_BIN" >&2
+    exit 1
+fi
+
+# --- Build bind mount list ---
+BINDS=()
+
+# System tools (read-only) — host paths preserved inside container
+BINDS+=("--bind" "/usr:/usr:ro")
+BINDS+=("--bind" "/lib64:/lib64:ro")
+BINDS+=("--bind" "/bin:/bin:ro")
+BINDS+=("--bind" "/sbin:/sbin:ro")
+
+# Shared deployment directory (read-only)
+BINDS+=("--bind" "/sdf/group/lcls/ds/dm/apps/dev:/sdf/group/lcls/ds/dm/apps/dev:ro")
+
+# API key (read-only)
+if [[ -f /sdf/group/lcls/ds/dm/apps/etc/key.dat ]]; then
+    BINDS+=("--bind" "/sdf/group/lcls/ds/dm/apps/etc/key.dat:/sdf/group/lcls/ds/dm/apps/etc/key.dat:ro")
+fi
+
+# Science data (read-only)
+if [[ -d /sdf/data/lcls ]]; then
+    BINDS+=("--bind" "/sdf/data/lcls:/sdf/data/lcls:ro")
+fi
+
+# Slurm (read-only) — /run/slurm/conf is a symlink to /var/spool/slurmd/conf-cache
+for slurm_path in /opt/slurm /etc/slurm /run/slurm /var/spool/slurmd/conf-cache /run/munge /var/run/munge; do
+    if [[ -e "$slurm_path" ]]; then
+        BINDS+=("--bind" "${slurm_path}:${slurm_path}:ro")
+    fi
+done
+
+# Slurm libraries and shared objects
+if [[ -d /etc/ld.so.conf.d ]]; then
+    BINDS+=("--bind" "/etc/ld.so.conf.d:/etc/ld.so.conf.d:ro")
+fi
+if [[ -f /etc/ld.so.cache ]]; then
+    BINDS+=("--bind" "/etc/ld.so.cache:/etc/ld.so.cache:ro")
+fi
+
+# Kerberos/GSSAPI for elog (read-only)
+if [[ -d /sdf/group/lcls/ds/ana/sw/conda1 ]]; then
+    BINDS+=("--bind" "/sdf/group/lcls/ds/ana/sw/conda1:/sdf/group/lcls/ds/ana/sw/conda1:ro")
+fi
+
+# Network config (needed for Slurm, DNS)
+for netfile in /etc/hosts /etc/resolv.conf /etc/nsswitch.conf /etc/passwd /etc/group; do
+    if [[ -f "$netfile" ]]; then
+        BINDS+=("--bind" "${netfile}:${netfile}:ro")
+    fi
+done
+
+# Current working directory (read-write)
+BINDS+=("--bind" "$(pwd):$(pwd):rw")
+
+# Scratch tmp (read-write)
+BINDS+=("--bind" "${SCRATCH_TMP}:/tmp:rw")
+
+# User-specified extra read-only mounts
+for path in "${EXTRA_RO_BINDS[@]}"; do
+    if [[ -e "$path" ]]; then
+        BINDS+=("--bind" "${path}:${path}:ro")
+    else
+        echo "[sandbox] Warning: --data path does not exist, skipping: $path" >&2
+    fi
+done
+
+# User-specified extra read-write mounts
+for path in "${EXTRA_RW_BINDS[@]}"; do
+    if [[ -e "$path" ]]; then
+        BINDS+=("--bind" "${path}:${path}:rw")
+    else
+        echo "[sandbox] Warning: --rw path does not exist, skipping: $path" >&2
+    fi
+done
+
+# --- Build environment variables ---
+# Note: --containall blocks --env HOME=..., so we use --home instead
+ENVS=()
+ENVS+=("--env" "USER=${USER}")
+ENVS+=("--env" "OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR}")
+ENVS+=("--env" "UV_CACHE_DIR=/tmp/uv-cache-${USER}")
+ENVS+=("--env" "UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python")
+ENVS+=("--env" "TERM=${TERM:-xterm-256color}")
+ENVS+=("--env" "LANG=${LANG:-en_US.UTF-8}")
+
+# Propagate PATH from host, prepend opencode bin dir
+ENVS+=("--env" "PATH=${OPENCODE_BIN_DIR}:/sdf/group/lcls/ds/dm/apps/dev/bin:${PATH}")
+
+# --- Assemble the full command ---
+APPTAINER_CMD=(
+    apptainer run
+    # Note: network is intentionally NOT isolated (no --net none)
+    # because Slurm and DNS require network access.
+    --containall
+    --home "${SCRATCH_HOME}"
+    --pwd "$(pwd)"
+    "${BINDS[@]}"
+    "${ENVS[@]}"
+    "$SIF"
+    opencode "${OPENCODE_ARGS[@]}"
+)
+
+# --- Execute ---
+if $DRY_RUN; then
+    echo "[sandbox] Would execute:"
+    printf '  %s\n' "${APPTAINER_CMD[@]}"
+    exit 0
+fi
+
+echo "[sandbox] Launching OpenCode in Apptainer sandbox ..." >&2
+echo "[sandbox] Working directory: $(pwd)" >&2
+echo "[sandbox] Home (sandboxed): ${SCRATCH_HOME}" >&2
+echo "[sandbox] Real \$HOME is hidden — git push, SSH disabled (by design)" >&2
+exec "${APPTAINER_CMD[@]}"

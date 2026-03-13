@@ -172,7 +172,7 @@ def search_docs(db_path, query, limit=10):
         print("Run 'index' first to build the search database.", file=sys.stderr)
         sys.exit(1)
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
 
     try:
         results = conn.execute(
@@ -233,7 +233,7 @@ def show_info(db_path):
         sys.exit(1)
 
     db_size = db_path.stat().st_size
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
 
     total = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
     total_size = conn.execute(

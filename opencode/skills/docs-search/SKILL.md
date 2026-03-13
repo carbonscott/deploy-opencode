@@ -28,13 +28,16 @@ Use `docs-index search` for **discovery**, then `Read` the top results. Use `Gre
 
 ### Installation
 
-The script is deployed at `/sdf/group/lcls/ds/dm/apps/dev/bin/docs-index`. Requires `uv` (no other dependencies). If `docs-index` is not on PATH:
+Source the facility detection script to add `docs-index` to PATH (auto-detects S3DF vs OLCF):
 
 ```bash
-export PATH="/sdf/group/lcls/ds/dm/apps/dev/bin:$PATH"
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+source "$SKILL_DIR/facility-env.sh" 2>/dev/null || true
 ```
 
-Verify: `docs-index --help`
+If `docs-index` is not found after sourcing, tell the user to set `DOCS_SEARCH_BIN` to the directory containing `docs-index` and `uv`.
+
+Requires `uv` (no other dependencies). Verify: `docs-index --help`
 
 ### Subcommands
 
