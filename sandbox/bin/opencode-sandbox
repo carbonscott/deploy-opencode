@@ -18,8 +18,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SIF="${OPENCODE_SANDBOX_SIF:-${SANDBOX_DIR}/opencode-sandbox.sif}"
+SIF="${OPENCODE_SANDBOX_SIF:-${SCRIPT_DIR}/opencode-sandbox.sif}"
 
 # --- Parse arguments ---
 NO_SANDBOX=false
