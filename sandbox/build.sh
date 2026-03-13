@@ -28,6 +28,7 @@ fi
 echo "Building SIF from $DEF_FILE ..."
 echo "Attempting apptainer build --fakeroot ..."
 
+rm -f "$SIF_FILE"
 if apptainer build --fakeroot "$SIF_FILE" "$DEF_FILE"; then
     echo "Build succeeded: $SIF_FILE"
     ls -lh "$SIF_FILE"

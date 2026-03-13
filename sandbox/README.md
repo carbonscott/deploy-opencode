@@ -8,7 +8,7 @@ Kernel-level filesystem isolation for OpenCode on S3DF. Runs OpenCode inside an 
 |----------|-----------|-------------|
 | `$PWD` (your project dir) | `/sdf/group/lcls/ds/dm/apps/dev/` (shared tools/data) | `$HOME` (~/.ssh, credentials, .bashrc) |
 | `/tmp/$USER/opencode-sandbox/` (scratch) | `/usr`, `/lib64`, `/bin` (system tools) | Other users' directories |
-| | `/opt/slurm/`, `/etc/slurm/`, `/run/munge/` (Slurm) | `/sdf/scratch/` |
+| | `/opt/slurm/`, `/run/slurm/`, `/run/munge/` (Slurm) | `/sdf/scratch/` |
 | | `/sdf/group/lcls/ds/ana/sw/conda1/` (Kerberos) | |
 | | `/sdf/data/lcls/` (science data) | |
 

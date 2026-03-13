@@ -34,10 +34,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --data)
+            [[ $# -lt 2 ]] && echo "Error: --data requires a path" >&2 && exit 1
             EXTRA_RO_BINDS+=("$2")
             shift 2
             ;;
         --rw)
+            [[ $# -lt 2 ]] && echo "Error: --rw requires a path" >&2 && exit 1
             EXTRA_RW_BINDS+=("$2")
             shift 2
             ;;
@@ -191,6 +193,8 @@ ENVS+=("--env" "PATH=${OPENCODE_BIN_DIR}:/sdf/group/lcls/ds/dm/apps/dev/bin:${PA
 # --- Assemble the full command ---
 APPTAINER_CMD=(
     apptainer run
+    # Note: network is intentionally NOT isolated (no --net none)
+    # because Slurm and DNS require network access.
     --containall
     --home "${SCRATCH_HOME}"
     --pwd "$(pwd)"
