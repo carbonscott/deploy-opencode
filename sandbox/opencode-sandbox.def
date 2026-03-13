@@ -1,0 +1,9 @@
+Bootstrap: docker
+From: rockylinux:9-minimal
+
+%post
+    microdnf install -y coreutils-single
+    microdnf clean all && rm -rf /var/cache/*
+
+%runscript
+    exec "$@"
