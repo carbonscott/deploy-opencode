@@ -18,7 +18,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIF="${OPENCODE_SANDBOX_SIF:-${SCRIPT_DIR}/opencode-sandbox.sif}"
+SANDBOX_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SIF="${OPENCODE_SANDBOX_SIF:-${SANDBOX_DIR}/opencode-sandbox.sif}"
 
 # --- Parse arguments ---
 NO_SANDBOX=false
@@ -91,8 +92,16 @@ if [[ -f "${HOME}/.gitconfig" ]]; then
     cp "${HOME}/.gitconfig" "${SCRATCH_HOME}/.gitconfig" 2>/dev/null || true
 fi
 
-# --- Copy OpenCode config for runtime state ---
-OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-/sdf/group/lcls/ds/dm/apps/dev/opencode}"
+# --- OpenCode config (always use shared config inside sandbox) ---
+OPENCODE_CONFIG_DIR="/sdf/group/lcls/ds/dm/apps/dev/opencode"
+
+# --- Resolve opencode binary (shell function not available inside container) ---
+OPENCODE_BIN_DIR="/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin"
+OPENCODE_BIN="${OPENCODE_BIN_DIR}/opencode"
+if [[ ! -x "$OPENCODE_BIN" ]]; then
+    echo "Error: opencode binary not found: $OPENCODE_BIN" >&2
+    exit 1
+fi
 
 # --- Build bind mount list ---
 BINDS=()
@@ -177,8 +186,8 @@ ENVS+=("--env" "UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python")
 ENVS+=("--env" "TERM=${TERM:-xterm-256color}")
 ENVS+=("--env" "LANG=${LANG:-en_US.UTF-8}")
 
-# Propagate PATH from host
-ENVS+=("--env" "PATH=${PATH}")
+# Propagate PATH from host, prepend opencode bin dir
+ENVS+=("--env" "PATH=${OPENCODE_BIN_DIR}:/sdf/group/lcls/ds/dm/apps/dev/bin:${PATH}")
 
 # --- Assemble the full command ---
 APPTAINER_CMD=(

@@ -23,10 +23,10 @@ Query the LCLS DAQ log database to find errors, analyze cascades, and investigat
 
 ## Execution
 
-Run queries read-only with headers enabled:
+Run queries read-only with headers enabled. Use the `file:` URI with `immutable=1` so SQLite skips WAL/SHM files (required when the database is on a read-only filesystem):
 
 ```bash
-DAQ_DB=/sdf/group/lcls/ds/dm/apps/dev/data/daq-logs/daq_logs.db
+DAQ_DB="file:///sdf/group/lcls/ds/dm/apps/dev/data/daq-logs/daq_logs.db?immutable=1"
 sqlite3 -header -column "$DAQ_DB" "SELECT ..."
 ```
 
