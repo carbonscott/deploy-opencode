@@ -7,7 +7,7 @@ Kernel-level filesystem isolation for OpenCode on S3DF. Runs OpenCode inside an 
 | Writable | Read-only | Not visible |
 |----------|-----------|-------------|
 | `$PWD` (your project dir) | `/sdf/group/lcls/ds/dm/apps/dev/` (shared tools/data) | `$HOME` (~/.ssh, credentials, .bashrc) |
-| `/tmp/$USER/opencode-sandbox/` (scratch) | `/usr`, `/lib64`, `/bin` (system tools) | Other users' directories |
+| `$SCRATCH/$USER-opencode-sandbox/` (scratch) | `/usr`, `/lib64`, `/bin` (system tools) | Other users' directories |
 | | `/opt/slurm/`, `/run/slurm/`, `/run/munge/` (Slurm) | `/sdf/scratch/` |
 | | `/sdf/group/lcls/ds/ana/sw/conda1/` (Kerberos) | |
 | | `/sdf/data/lcls/` (science data) | |
@@ -44,6 +44,9 @@ opencode-sandbox --rw /sdf/scratch/users/$USER/workdir/
 # See the apptainer command without running it
 opencode-sandbox --dry-run
 
+# Ephemeral session — scratch state deleted on exit
+opencode-sandbox --incognito
+
 # Bypass sandbox entirely (no protection)
 opencode-sandbox --no-sandbox
 
@@ -62,7 +65,7 @@ opencode-sandbox -- --some-opencode-flag
 ## Design notes
 
 - **Path preservation**: All host paths are identical inside the container. No path rewriting needed in skills, agents, or env.sh files.
-- **$HOME is hidden**: `--containall` hides the real home. A fake writable home at `/tmp/$USER/opencode-sandbox/home/` stores runtime state. This means `git push` and SSH fail — this is intentional security behavior.
+- **$HOME is hidden**: `--containall` hides the real home. A writable scratch home at `$SCRATCH/$USER-opencode-sandbox/home/` (falls back to `/tmp` if `$SCRATCH` is unset) stores runtime state. This means `git push` and SSH fail — this is intentional security behavior.
 - **Git commits work**: `~/.gitconfig` is copied to the scratch home so author info is correct. But pushes require SSH keys (hidden), so you push after exiting the sandbox.
 - **Slurm works**: Slurm binaries, config, and munge socket are mounted read-only. Network is not isolated, so daemon communication works.
 - **SQLite reads work**: Databases on read-only mounts open in read-only mode. Cron jobs (running outside the sandbox on sdfcron001) handle all writes.
@@ -88,7 +91,7 @@ The SIF rarely needs rebuilding since it's just a filesystem skeleton.
 1. **No git push/SSH**: Home directory (with SSH keys) is hidden. Push changes after exiting the sandbox.
 2. **No writes to shared deployment**: `/sdf/group/lcls/ds/dm/apps/dev/` is read-only. Deploy changes from outside the sandbox.
 3. **SQLite WAL mode**: If a database is mid-write by a cron job while you read it, you may get a brief lock. In practice this is rare and resolves quickly.
-4. **OpenCode state**: OpenCode writes runtime state to `$HOME`. The sandbox provides a writable scratch home, but state does not persist across sandbox sessions. If persistence is needed, mount a specific path with `--rw`.
+4. **OpenCode state**: OpenCode writes runtime state to `$HOME`. The sandbox provides a persistent writable scratch home at `$SCRATCH/$USER-opencode-sandbox/home/`. Use `--incognito` for ephemeral sessions where state is deleted on exit.
 5. **New paths**: If a skill references a path not in the default bind list, add it with `--data PATH`.
 
 ## Testing checklist

@@ -8,6 +8,7 @@
 #   --no-sandbox    Bypass the sandbox (run OpenCode directly)
 #   --data PATH     Add an extra read-only bind mount (repeatable)
 #   --rw PATH       Add an extra read-write bind mount (repeatable)
+#   --incognito     Ephemeral session — scratch state deleted on exit
 #   --dry-run       Print the apptainer command without executing
 #   --help          Show this help message
 #
@@ -23,6 +24,7 @@ SIF="${OPENCODE_SANDBOX_SIF:-${SCRIPT_DIR}/opencode-sandbox.sif}"
 # --- Parse arguments ---
 NO_SANDBOX=false
 DRY_RUN=false
+INCOGNITO=false
 EXTRA_RO_BINDS=()
 EXTRA_RW_BINDS=()
 OPENCODE_ARGS=()
@@ -42,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             [[ $# -lt 2 ]] && echo "Error: --rw requires a path" >&2 && exit 1
             EXTRA_RW_BINDS+=("$2")
             shift 2
+            ;;
+        --incognito)
+            INCOGNITO=true
+            shift
             ;;
         --dry-run)
             DRY_RUN=true
@@ -83,7 +89,14 @@ if [[ ! -f "$SIF" ]]; then
 fi
 
 # --- Set up scratch directories ---
-SCRATCH_BASE="/tmp/${USER}/opencode-sandbox"
+SCRATCH_ROOT="${SCRATCH:-/tmp}"
+if $INCOGNITO; then
+    SCRATCH_BASE="$(mktemp -d "${SCRATCH_ROOT}/${USER}-opencode-sandbox-XXXXXX")"
+    trap 'rm -rf "$SCRATCH_BASE"' EXIT
+    echo "[sandbox] Incognito mode — session state will be deleted on exit" >&2
+else
+    SCRATCH_BASE="${SCRATCH_ROOT}/${USER}-opencode-sandbox"
+fi
 SCRATCH_HOME="${SCRATCH_BASE}/home"
 SCRATCH_TMP="${SCRATCH_BASE}/tmp"
 mkdir -p "$SCRATCH_HOME" "$SCRATCH_TMP"
@@ -215,4 +228,8 @@ echo "[sandbox] Launching OpenCode in Apptainer sandbox ..." >&2
 echo "[sandbox] Working directory: $(pwd)" >&2
 echo "[sandbox] Home (sandboxed): ${SCRATCH_HOME}" >&2
 echo "[sandbox] Real \$HOME is hidden — git push, SSH disabled (by design)" >&2
-exec "${APPTAINER_CMD[@]}"
+if $INCOGNITO; then
+    "${APPTAINER_CMD[@]}"
+else
+    exec "${APPTAINER_CMD[@]}"
+fi
