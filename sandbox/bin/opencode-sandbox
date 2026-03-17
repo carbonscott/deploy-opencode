@@ -228,4 +228,8 @@ echo "[sandbox] Launching OpenCode in Apptainer sandbox ..." >&2
 echo "[sandbox] Working directory: $(pwd)" >&2
 echo "[sandbox] Home (sandboxed): ${SCRATCH_HOME}" >&2
 echo "[sandbox] Real \$HOME is hidden — git push, SSH disabled (by design)" >&2
-exec "${APPTAINER_CMD[@]}"
+if $INCOGNITO; then
+    "${APPTAINER_CMD[@]}"
+else
+    exec "${APPTAINER_CMD[@]}"
+fi
