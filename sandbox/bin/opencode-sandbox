@@ -166,6 +166,11 @@ for netfile in /etc/hosts /etc/resolv.conf /etc/nsswitch.conf /etc/passwd /etc/g
     fi
 done
 
+# Alternatives system (needed for symlinks like /usr/bin/nc → /etc/alternatives/nmap)
+if [[ -d /etc/alternatives ]]; then
+    BINDS+=("--bind" "/etc/alternatives:/etc/alternatives:ro")
+fi
+
 # Current working directory (read-write)
 BINDS+=("--bind" "$(pwd):$(pwd):rw")
 
