@@ -1,6 +1,6 @@
 # Build Tools, Not Agents
 
-*A tooling-first approach to AI agents for scientific computing*
+*A tooling-first approach to AI agents for experimental science*
 
 ---
 
@@ -418,4 +418,5 @@ tool -- and the tool was worth building anyway.
 SLAC National Accelerator Laboratory, where ~15 AI skills serve
 scientists and engineers across experiment operations, data analysis, and
 facility computing.  The deployment runs on the S3DF HPC cluster using
-general-purpose language models with no fine-tuning.*
+general-purpose language models with no fine-tuning.  The deployment
+serves experimental science workflows, not large-scale simulation.*

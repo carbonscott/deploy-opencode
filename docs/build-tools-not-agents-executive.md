@@ -1,6 +1,6 @@
 # Accelerating Scientific Discovery Through AI-Ready Infrastructure
 
-*A strategy for sustainable AI adoption in scientific computing*
+*A strategy for sustainable AI adoption at experimental user facilities*
 
 ---
 
@@ -373,4 +373,5 @@ workflow deployment at SLAC National Accelerator Laboratory, where
 approximately fifteen capabilities serve scientists and engineers across
 the Linac Coherent Light Source.  The deployment operates on the S3DF
 high-performance computing cluster using general-purpose foundation
-models with no fine-tuning.*
+models with no fine-tuning.  The deployment serves experimental science
+workflows, not large-scale simulation.*
