@@ -1,0 +1,433 @@
+#!/usr/bin/env bash
+# Share opencode-sandbox sessions with others via fowl tunnels.
+#
+# Usage:
+#   opencode-sandbox-share start [OPTIONS]
+#   opencode-sandbox-share tunnel SESSION_ID [--count N]
+#   opencode-sandbox-share status
+#   opencode-sandbox-share stop [SESSION_ID | --all]
+#   opencode-sandbox-share manifest
+#
+# Start Options:
+#   --sessions N              Number of sessions to create (default: 1)
+#   --tunnels-per-session M   Tunnels per session (default: 1)
+#   --base-port PORT          Starting port number (default: 5000)
+#
+# Environment:
+#   OPENCODE_SHARE_STATE_DIR  State directory
+#                             (default: $SCRATCH/opencode-share-$USER)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR="${OPENCODE_SHARE_STATE_DIR:-${SCRATCH:-/tmp}/opencode-share-${USER}}"
+OPENCODE_SANDBOX="${OPENCODE_SANDBOX:-${SCRIPT_DIR}/opencode-sandbox}"
+
+if [[ ! -x "$OPENCODE_SANDBOX" ]]; then
+    echo "[share] Error: opencode-sandbox not found: $OPENCODE_SANDBOX" >&2
+    echo "Set OPENCODE_SANDBOX to the correct path." >&2
+    exit 1
+fi
+
+# --- Utility functions ---
+
+log() { echo "[share] $*" >&2; }
+err() { echo "[share] Error: $*" >&2; }
+
+ensure_state_dirs() {
+    mkdir -p "$STATE_DIR"/{sessions,tunnels}
+}
+
+# Return the next available numeric ID in a directory of .env files.
+next_id() {
+    local dir="$1"
+    local max=0
+    for f in "$dir"/*.env; do
+        [[ -f "$f" ]] || continue
+        local n
+        n=$(basename "$f" .env)
+        [[ "$n" =~ ^[0-9]+$ ]] && (( n > max )) && max=$n
+    done
+    echo $(( max + 1 ))
+}
+
+is_alive() { kill -0 "$1" 2>/dev/null; }
+
+# Extract a string value from single-line JSON: json_val '{"k":"v"}' k → v
+json_val() {
+    local json="$1" key="$2"
+    echo "$json" | sed 's/.*"'"$key"'": *"\([^"]*\)".*/\1/'
+}
+
+# Kill a process group by leader PID (SIGTERM, wait, SIGKILL).
+_kill_group() {
+    local pid="$1"
+    if is_alive "$pid"; then
+        kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+        sleep 1
+        if is_alive "$pid"; then
+            kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+        fi
+    fi
+}
+
+# --- Session management ---
+
+_start_session() {
+    local port="$1"
+    local sid
+    sid=$(next_id "$STATE_DIR/sessions")
+
+    local pid_file="$STATE_DIR/sessions/${sid}.pid"
+
+    # Launch in a new session (setsid) so we can kill the whole group later.
+    setsid bash -c '
+        echo $$ > "'"$pid_file"'"
+        exec "'"$OPENCODE_SANDBOX"'" --incognito -- web --port '"$port"'
+    ' &>/dev/null &
+
+    # Wait for PID file to appear.
+    local spid=""
+    for (( i=0; i<5; i++ )); do
+        [[ -f "$pid_file" ]] && { spid=$(cat "$pid_file"); break; }
+        sleep 0.5
+    done
+
+    if [[ -z "$spid" ]]; then
+        err "Session $sid: failed to start"
+        return 1
+    fi
+
+    cat > "$STATE_DIR/sessions/${sid}.env" <<EOF
+PID=$spid
+PORT=$port
+STARTED=$(date -Iseconds)
+EOF
+    rm -f "$pid_file"
+
+    log "Session $sid: launched on port $port (PID $spid)"
+
+    # Wait for the port to accept connections.
+    log "Session $sid: waiting for port $port ..."
+    local ready=false
+    for (( i=0; i<60; i++ )); do
+        if (echo >/dev/tcp/localhost/"$port") 2>/dev/null; then
+            ready=true
+            break
+        fi
+        if ! is_alive "$spid"; then
+            err "Session $sid: process died"
+            return 1
+        fi
+        sleep 1
+    done
+
+    if $ready; then
+        log "Session $sid: ready"
+    else
+        log "Session $sid: WARNING — port $port not responding after 60s (continuing anyway)"
+    fi
+
+    echo "$sid"
+}
+
+# --- Tunnel management ---
+
+_create_tunnel() {
+    local session_id="$1"
+    local port="$2"
+    local tid
+    tid=$(next_id "$STATE_DIR/tunnels")
+
+    local pid_file="$STATE_DIR/tunnels/${tid}.pid"
+    local out_file="$STATE_DIR/tunnels/${tid}.out"
+
+    # Start fowld in its own session.  The subshell feeds JSON commands on
+    # stdin and keeps the pipe open so fowld stays alive.
+    setsid bash -c '
+        echo $$ > "'"$pid_file"'"
+        {
+            echo "{\"kind\": \"allocate-code\"}"
+            sleep 2
+            echo "{\"kind\": \"remote\", \"name\": \"opencode\", \"local_connect_port\": '"$port"'}"
+            while true; do sleep 3600; done
+        } | uvx --from fowl python -m fowl 2>/dev/null
+    ' > "$out_file" 2>/dev/null &
+
+    # Wait for PID file.
+    local tpid=""
+    for (( i=0; i<5; i++ )); do
+        [[ -f "$pid_file" ]] && { tpid=$(cat "$pid_file"); break; }
+        sleep 0.5
+    done
+
+    if [[ -z "$tpid" ]]; then
+        err "Tunnel $tid: failed to start fowld"
+        return 1
+    fi
+
+    # Wait for wormhole code in fowld output.
+    local code=""
+    for (( i=0; i<30; i++ )); do
+        sleep 1
+        if [[ -f "$out_file" ]]; then
+            local line
+            line=$(grep '"code-allocated"' "$out_file" 2>/dev/null | head -1) || true
+            if [[ -n "$line" ]]; then
+                code=$(json_val "$line" code)
+                [[ -n "$code" && "$code" != "$line" ]] && break
+                code=""
+            fi
+        fi
+    done
+
+    if [[ -z "$code" ]]; then
+        err "Tunnel $tid: timed out waiting for wormhole code"
+        _kill_group "$tpid"
+        rm -f "$pid_file" "$out_file"
+        return 1
+    fi
+
+    cat > "$STATE_DIR/tunnels/${tid}.env" <<EOF
+PID=$tpid
+SESSION_ID=$session_id
+PORT=$port
+WORMHOLE_CODE=$code
+STARTED=$(date -Iseconds)
+EOF
+    rm -f "$pid_file"
+
+    log "Tunnel $tid -> session $session_id: $code"
+}
+
+# --- Commands ---
+
+cmd_start() {
+    local sessions=1
+    local tunnels_per=1
+    local base_port=5000
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --sessions)            sessions="$2";    shift 2 ;;
+            --tunnels-per-session) tunnels_per="$2"; shift 2 ;;
+            --base-port)           base_port="$2";   shift 2 ;;
+            *) err "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    ensure_state_dirs
+
+    local total=$(( sessions * tunnels_per ))
+    log "Starting $sessions session(s) with $tunnels_per tunnel(s) each ($total total) ..."
+    echo ""
+
+    for (( s=0; s<sessions; s++ )); do
+        local port=$(( base_port + s ))
+        local sid
+        sid=$(_start_session "$port") || continue
+
+        for (( t=0; t<tunnels_per; t++ )); do
+            _create_tunnel "$sid" "$port" || true
+        done
+    done
+
+    echo ""
+    cmd_manifest
+}
+
+cmd_tunnel() {
+    local session_id="${1:-}"
+    local count=1
+    shift || true
+
+    if [[ -z "$session_id" ]]; then
+        err "Usage: opencode-sandbox-share tunnel SESSION_ID [--count N]"
+        exit 1
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --count) count="$2"; shift 2 ;;
+            *) err "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    local session_env="$STATE_DIR/sessions/${session_id}.env"
+    if [[ ! -f "$session_env" ]]; then
+        err "Session $session_id not found"
+        exit 1
+    fi
+
+    # shellcheck disable=SC1090
+    source "$session_env"
+
+    ensure_state_dirs
+
+    log "Adding $count tunnel(s) to session $session_id (port $PORT) ..."
+
+    for (( t=0; t<count; t++ )); do
+        _create_tunnel "$session_id" "$PORT" || true
+    done
+
+    echo ""
+    cmd_manifest
+}
+
+cmd_status() {
+    if [[ ! -d "$STATE_DIR" ]]; then
+        log "No active sessions (state dir does not exist)."
+        return
+    fi
+
+    echo "State: $STATE_DIR"
+    echo ""
+
+    echo "Sessions:"
+    printf "  %-4s  %-6s  %-8s  %s\n" "ID" "Port" "PID" "Status"
+    printf "  %-4s  %-6s  %-8s  %s\n" "----" "------" "--------" "------"
+    local has_sessions=false
+    for f in "$STATE_DIR"/sessions/*.env; do
+        [[ -f "$f" ]] || continue
+        has_sessions=true
+        local id
+        id=$(basename "$f" .env)
+        # shellcheck disable=SC1090
+        source "$f"
+        local status="dead"
+        is_alive "$PID" && status="running"
+        printf "  %-4s  %-6s  %-8s  %s\n" "$id" "$PORT" "$PID" "$status"
+    done
+    $has_sessions || echo "  (none)"
+
+    echo ""
+    echo "Tunnels:"
+    printf "  %-4s  %-7s  %-8s  %-7s  %s\n" "ID" "Session" "PID" "Status" "Wormhole Code"
+    printf "  %-4s  %-7s  %-8s  %-7s  %s\n" "----" "-------" "--------" "-------" "-------------"
+    local has_tunnels=false
+    for f in "$STATE_DIR"/tunnels/*.env; do
+        [[ -f "$f" ]] || continue
+        has_tunnels=true
+        local id
+        id=$(basename "$f" .env)
+        # shellcheck disable=SC1090
+        source "$f"
+        local status="dead"
+        is_alive "$PID" && status="running"
+        printf "  %-4s  %-7s  %-8s  %-7s  %s\n" "$id" "$SESSION_ID" "$PID" "$status" "$WORMHOLE_CODE"
+    done
+    $has_tunnels || echo "  (none)"
+}
+
+cmd_manifest() {
+    if [[ ! -d "$STATE_DIR/tunnels" ]]; then
+        log "No tunnels."
+        return
+    fi
+
+    echo "# Participant instructions:"
+    echo "#   1. Install fowl:  pip install fowl  (or:  pipx install fowl)"
+    echo "#   2. Run YOUR command below"
+    echo "#   3. Open http://localhost:4096 in your browser"
+    echo ""
+    printf "  %-4s  %-7s  %s\n" "#" "Session" "Command"
+    printf "  %-4s  %-7s  %s\n" "----" "-------" "-------"
+
+    local n=1
+    for f in "$STATE_DIR"/tunnels/*.env; do
+        [[ -f "$f" ]] || continue
+        # shellcheck disable=SC1090
+        source "$f"
+        is_alive "$PID" || continue
+        printf "  %-4s  %-7s  uvx fowl --client opencode:4096 %s\n" "$n" "$SESSION_ID" "$WORMHOLE_CODE"
+        (( n++ ))
+    done
+
+    if (( n == 1 )); then
+        echo "  (no active tunnels)"
+    fi
+}
+
+cmd_stop() {
+    local target="${1:-}"
+
+    if [[ -z "$target" ]]; then
+        err "Usage: opencode-sandbox-share stop [SESSION_ID | --all]"
+        exit 1
+    fi
+
+    if [[ ! -d "$STATE_DIR" ]]; then
+        log "Nothing to stop (state dir does not exist)."
+        return
+    fi
+
+    if [[ "$target" == "--all" ]]; then
+        # Kill tunnels first, then sessions.
+        for f in "$STATE_DIR"/tunnels/*.env; do
+            [[ -f "$f" ]] || continue
+            # shellcheck disable=SC1090
+            source "$f"
+            log "Stopping tunnel $(basename "$f" .env) (PID $PID) ..."
+            _kill_group "$PID"
+        done
+
+        for f in "$STATE_DIR"/sessions/*.env; do
+            [[ -f "$f" ]] || continue
+            # shellcheck disable=SC1090
+            source "$f"
+            log "Stopping session $(basename "$f" .env) (PID $PID) ..."
+            _kill_group "$PID"
+        done
+
+        rm -rf "$STATE_DIR"
+        log "All stopped. State cleaned up."
+
+    else
+        # Stop a specific session and its tunnels.
+        local session_env="$STATE_DIR/sessions/${target}.env"
+        if [[ ! -f "$session_env" ]]; then
+            err "Session $target not found"
+            exit 1
+        fi
+
+        for f in "$STATE_DIR"/tunnels/*.env; do
+            [[ -f "$f" ]] || continue
+            # shellcheck disable=SC1090
+            source "$f"
+            if [[ "$SESSION_ID" == "$target" ]]; then
+                log "Stopping tunnel $(basename "$f" .env) ..."
+                _kill_group "$PID"
+                rm -f "$f" "${f%.env}.out"
+            fi
+        done
+
+        # shellcheck disable=SC1090
+        source "$session_env"
+        log "Stopping session $target (PID $PID) ..."
+        _kill_group "$PID"
+        rm -f "$session_env"
+
+        log "Session $target stopped."
+    fi
+}
+
+# --- Main dispatch ---
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+    start)    cmd_start "$@" ;;
+    tunnel)   cmd_tunnel "$@" ;;
+    status)   cmd_status ;;
+    stop)     cmd_stop "$@" ;;
+    manifest) cmd_manifest ;;
+    --help|help|"")
+        head -20 "$0" | grep '^#' | sed 's/^# \?//'
+        ;;
+    *)
+        err "Unknown command: $cmd"
+        echo "Run '$(basename "$0") --help' for usage." >&2
+        exit 1
+        ;;
+esac
