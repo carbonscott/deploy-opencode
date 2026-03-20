@@ -1,6 +1,6 @@
 # OpenCode Log Analysis
 
-Ingest OpenCode session logs into DuckDB for structured analysis of API response times, errors, and tool usage.
+Ingest OpenCode session logs into DuckDB for structured analysis of API response times, errors, and LLM call metrics.
 
 ## Quick Start
 

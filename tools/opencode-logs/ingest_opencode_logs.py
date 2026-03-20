@@ -9,7 +9,6 @@ import glob
 import json
 import os
 import re
-from datetime import datetime
 
 import duckdb
 
@@ -45,7 +44,8 @@ KNOWN_KEYS = [
 #   - a quoted string
 #   - a simple token (no spaces, up to next key= or end)
 _key_alt = "|".join(re.escape(k) for k in KNOWN_KEYS)
-# We'll parse key=value pairs procedurally instead of with one big regex,
+_KNOWN_KEY_RE = re.compile(r"\b(" + _key_alt + r")=")
+# We parse key=value pairs procedurally instead of with one big regex,
 # because values like error={huge json} or stdout=multiline are too complex.
 
 
@@ -60,14 +60,14 @@ def parse_kv_and_message(remainder: str) -> tuple[dict, str]:
     remainder_len = len(remainder)
 
     while pos < remainder_len:
-        # Look for next key= pattern
-        match = re.search(r"\b([a-zA-Z_][a-zA-Z0-9_.]*?)=", remainder[pos:])
+        # Look for next known key= pattern
+        match = _KNOWN_KEY_RE.search(remainder, pos)
         if not match:
             break
 
-        key_start = pos + match.start()
+        key_start = match.start()
         key = match.group(1)
-        value_start = pos + match.end()
+        value_start = match.end()
 
         if value_start >= remainder_len:
             attrs[key] = ""
@@ -85,22 +85,20 @@ def parse_kv_and_message(remainder: str) -> tuple[dict, str]:
             value = remainder[value_start + 1 : end]
             pos = end + 1
         elif char in "{[":
-            # JSON value — brace/bracket match
-            depth = 0
-            i = value_start
-            open_char = char
-            close_char = "}" if char == "{" else "]"
-            while i < remainder_len:
-                c = remainder[i]
-                if c == open_char:
-                    depth += 1
-                elif c == close_char:
-                    depth -= 1
-                    if depth == 0:
-                        break
-                i += 1
-            value = remainder[value_start : i + 1]
-            pos = i + 1
+            # JSON value — use json decoder for correct string handling
+            try:
+                obj, end_idx = json.JSONDecoder().raw_decode(remainder, value_start)
+                value = remainder[value_start:end_idx]
+                pos = end_idx
+            except json.JSONDecodeError:
+                # Fallback: consume to next space
+                space = remainder.find(" ", value_start)
+                if space == -1:
+                    value = remainder[value_start:]
+                    pos = remainder_len
+                else:
+                    value = remainder[value_start:space]
+                    pos = space + 1
         elif key == "error":
             # error= consumes everything to end of line (it's always last
             # or contains embedded key=value that aren't real keys)
@@ -220,10 +218,12 @@ def ingest_files(db: duckdb.DuckDBPyConnection, log_files: list[str]):
         basename = os.path.basename(filepath)
         batch = []
         entry_count = 0
+        last_line_num = 0
 
         for entry in parse_log_file(filepath):
             batch.append(entry)
             entry_count += 1
+            last_line_num = entry[0]  # line_number is first element
 
             if len(batch) >= 5000:
                 _insert_batch(db, batch)
@@ -232,10 +232,9 @@ def ingest_files(db: duckdb.DuckDBPyConnection, log_files: list[str]):
         if batch:
             _insert_batch(db, batch)
 
-        file_lines = sum(1 for _ in open(filepath, errors="replace"))
-        total_lines += file_lines
+        total_lines += last_line_num
         total_entries += entry_count
-        print(f"  {basename}: {file_lines} lines -> {entry_count} entries")
+        print(f"  {basename}: ~{last_line_num} lines -> {entry_count} entries")
 
     return total_lines, total_entries
 
@@ -281,14 +280,14 @@ def derive_llm_calls(db: duckdb.DuckDBPyConnection):
         ),
         -- Pre-filter delta events (service=bus only, safe to parse)
         delta_events AS (
-            SELECT id, timestamp
+            SELECT id, timestamp, log_file
             FROM log_events
             WHERE service = 'bus'
               AND json_extract_string(attributes, '$.type') = 'message.part.delta'
         ),
         -- Pre-filter error events
         error_events AS (
-            SELECT id, timestamp
+            SELECT id, timestamp, log_file
             FROM log_events
             WHERE level = 'ERROR'
         ),
@@ -298,7 +297,8 @@ def derive_llm_calls(db: duckdb.DuckDBPyConnection):
                 MIN(de.timestamp) AS first_delta_ts
             FROM stream_calls sc
             LEFT JOIN delta_events de
-                ON de.timestamp >= sc.timestamp
+                ON de.log_file = sc.log_file
+                AND de.timestamp >= sc.timestamp
                 AND de.timestamp <= COALESCE(sc.next_stream_ts, sc.timestamp + INTERVAL '10 minutes')
             GROUP BY sc.id
         ),
@@ -308,7 +308,8 @@ def derive_llm_calls(db: duckdb.DuckDBPyConnection):
                 COUNT(ee.id) > 0 AS has_error
             FROM stream_calls sc
             LEFT JOIN error_events ee
-                ON ee.timestamp >= sc.timestamp
+                ON ee.log_file = sc.log_file
+                AND ee.timestamp >= sc.timestamp
                 AND ee.timestamp <= COALESCE(sc.next_stream_ts, sc.timestamp + INTERVAL '10 minutes')
             GROUP BY sc.id
         )
