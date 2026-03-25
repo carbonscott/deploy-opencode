@@ -27,10 +27,13 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/find-rings/` | You | find-rings skill (diffraction ring detection for detector calibration) |
 | `dev/opencode/skills/experimental-hutch-python/` | You | experimental-hutch-python skill [EXPERIMENTAL] (beamline control assistant + IPython bridge) |
 | `dev/opencode/skills/ask-olcf/` | You | ask-olcf skill (OLCF documentation assistant) |
+| `dev/opencode/skills/ask-epics/` | You | ask-epics skill (EPICS documentation assistant) |
 | `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
 | `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
 | `dev/data/olcf-docs/` | You | olcf-user-docs git repo with FTS5 search index (from olcf/olcf-user-docs) |
 | `dev/tools/olcf-docs/` | You | olcf-docs sync scripts (weekly git pull + re-index) |
+| `dev/data/epics-docs/` | You | 26 epics-base GitHub repos with FTS5 search index |
+| `dev/tools/epics-docs/` | You | epics-docs sync scripts (weekly git pull + re-index) |
 | `dev/data/cuda-docs/` | You | CUDA documentation markdown files (Best Practices, Runtime API, Driver API) |
 | `dev/data/nano-isaac/` | You | nanoISAAC data files (JSON databases, Python scripts, experimental data) |
 | `dev/software/lcls2/` | You | lcls2 git repo with .agent_docs and .code-index.db |
@@ -100,6 +103,9 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/ask-olcf/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-olcf/` |
 | `data/olcf-docs/` | `https://github.com/olcf/olcf-user-docs.git`; cron via `tools/olcf-docs/scripts/olcf-docs-cron.sh` (weekly) |
 | `tools/olcf-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-olcf/tools/` |
+| `skills/ask-epics/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-epics/` |
+| `data/epics-docs/` | `https://github.com/epics-base/*.git` (26 repos); cron via `tools/epics-docs/scripts/epics-docs-cron.sh` (weekly) |
+| `tools/epics-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-epics/tools/` |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
@@ -130,6 +136,10 @@ rsync -a --exclude='.uv-cache' \
 # olcf-docs — managed by cron (weekly via tools/olcf-docs/scripts/olcf-docs-cron.sh)
 # No manual copy needed. To check status:
 #   tail /sdf/group/lcls/ds/dm/apps/dev/data/olcf-docs/cron.log
+
+# epics-docs — managed by cron (weekly via tools/epics-docs/scripts/epics-docs-cron.sh)
+# No manual copy needed. To check status:
+#   tail /sdf/group/lcls/ds/dm/apps/dev/data/epics-docs/cron.log
 ```
 
 ## Key Config Details
@@ -146,7 +156,8 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/find-rings/env.sh` defines `FIND_RINGS_APP_DIR`; provides `find_rings_run` wrapper for ring detection (no cron job)
 - The `tools/sdf-docs/env.sh` defines `SDF_DOCS_APP_DIR` and `SDF_DOCS_DATA_DIR`; cron job runs daily syncing sdf-docs repo and rebuilding FTS5 search index
 - The `tools/olcf-docs/env.sh` defines `OLCF_DOCS_APP_DIR` and `OLCF_DOCS_DATA_DIR`; cron job runs weekly syncing olcf-user-docs repo and rebuilding FTS5 search index
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`, `agents/find-rings -> ../skills/find-rings`, `agents/experimental-hutch-python -> ../skills/experimental-hutch-python`, `agents/ask-olcf -> ../skills/ask-olcf`
+- The `tools/epics-docs/env.sh` defines `EPICS_DOCS_APP_DIR` and `EPICS_DOCS_DATA_DIR`; cron job runs weekly syncing 26 epics-base repos and rebuilding FTS5 search index
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`, `agents/find-rings -> ../skills/find-rings`, `agents/experimental-hutch-python -> ../skills/experimental-hutch-python`, `agents/ask-olcf -> ../skills/ask-olcf`, `agents/ask-epics -> ../skills/ask-epics`
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
 
 ## uv for Shared Deployment
@@ -283,6 +294,16 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Data (git clone) | `/sdf/group/lcls/ds/dm/apps/dev/data/olcf-docs/` |
 | Cron tools | `/sdf/group/lcls/ds/dm/apps/dev/tools/olcf-docs/` |
 | Cron tools source | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-olcf/tools/` |
+
+### ask-epics
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-epics/SKILL.md` |
+| Source (claude skill) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-epics/SKILL.md` |
+| Data (26 git clones) | `/sdf/group/lcls/ds/dm/apps/dev/data/epics-docs/` |
+| Cron tools | `/sdf/group/lcls/ds/dm/apps/dev/tools/epics-docs/` |
+| Cron tools source | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-epics/tools/` |
 
 ### docs-search
 
