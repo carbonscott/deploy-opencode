@@ -146,6 +146,13 @@ for slurm_path in /opt/slurm /etc/slurm /run/slurm /var/spool/slurmd/conf-cache 
     fi
 done
 
+# SSSD (read-only) — needed for user/group resolution via NSS
+# S3DF uses SSSD/LDAP; without this, Slurm commands like "squeue -u $USER" fail
+# with "Invalid user" because the username can't be resolved to a UID
+if [[ -d /var/lib/sss ]]; then
+    BINDS+=("--bind" "/var/lib/sss:/var/lib/sss:ro")
+fi
+
 # Slurm libraries and shared objects
 if [[ -d /etc/ld.so.conf.d ]]; then
     BINDS+=("--bind" "/etc/ld.so.conf.d:/etc/ld.so.conf.d:ro")
