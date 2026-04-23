@@ -15,3 +15,11 @@ confluence_export.log
 
 # External dependencies (not managed by this repo)
 externals/
+
+# Nested standalone skill repos — managed separately
+opencode/skills/xpm-seq/
+claude/skills/ask-tiled/
+claude/skills/ask-s3df/
+claude/skills/ask-epics/
+claude/skills/ask-nersc/
+claude/skills/ask-olcf/
