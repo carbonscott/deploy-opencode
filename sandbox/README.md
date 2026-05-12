@@ -60,7 +60,24 @@ opencode-sandbox -- --some-opencode-flag
 |----------|---------|-------------|
 | `OPENCODE_SANDBOX_SIF` | `<script-dir>/opencode-sandbox.sif` | Path to the SIF image |
 | `OPENCODE_SANDBOX_EXTRA` | (none) | Colon-separated extra read-only paths |
+| `APPTAINERENV_*` | (none) | Any host env var prefixed with `APPTAINERENV_` is auto-forwarded into the sandbox with the prefix stripped — see [BYOK](#byok-bring-your-own-key) below |
 | `OPENCODE_CONFIG_DIR` | `/sdf/group/lcls/ds/dm/apps/dev/opencode` | OpenCode config directory |
+
+## BYOK (Bring Your Own Key)
+
+Opencode's `OPENCODE_CONFIG_CONTENT` env var deep-merges with the shared config — set it to override `apiKey` (or any other field) per user, without changing the shared deployment.
+
+Outside the sandbox:
+
+    OPENCODE_CONFIG_CONTENT='{"provider":{"slac":{"options":{"apiKey":"sk-..."}}}}' opencode
+
+Inside the sandbox, Apptainer's `--containall` drops all host env vars by design. To pass `OPENCODE_CONFIG_CONTENT` through, use the auto-forward prefix:
+
+    APPTAINERENV_OPENCODE_CONFIG_CONTENT='{"provider":{"slac":{"options":{"apiKey":"sk-..."}}}}' opencode-sandbox
+
+Apptainer strips the `APPTAINERENV_` prefix and injects the remainder into the container environment before opencode starts. Any other env var can be passed the same way (e.g. `APPTAINERENV_OPENCODE_CONFIG=...`).
+
+The same pattern works under older Apptainer/Singularity versions with the prefix `SINGULARITYENV_`.
 
 ## Design notes
 
