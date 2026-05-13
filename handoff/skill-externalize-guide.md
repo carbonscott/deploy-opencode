@@ -61,9 +61,9 @@ JSON was chosen over YAML because the deploy host's system Python (3.6) has no `
 Fields:
 - `name` — directory name under `opencode/skills/` (no `skill-` prefix).
 - `repo` — `<owner>/skill-<name>` on GitHub.
-- `ref` — branch, tag, or commit. Pin to a tag for stability; track `main` for active skills.
+- `ref` — branch name (recommended). Tags work but `deploy.sh` will not auto-reset to them on re-deploy (the cached `--depth=1` clone sticks until you wipe `$STAGING_ROOT/<name>`). Commit SHAs are **not supported** in v1 — `git clone --depth=1 -b <sha>` rejects them.
 - `cron` — `null` for skills with no data sync. Otherwise: `schedule` (crontab format), `script` (path inside the repo), `host` (cron host, typically `sdfcron001`).
-- `central_data` — absolute path of the central data dir the skill operates on. `null` if none.
+- `central_data` — absolute path of the central data dir the skill operates on, or `null`. **Advisory only** — `deploy.sh` does not read or enforce this field. It exists to remind operators which central dir each skill expects.
 
 ## Permissions (the recurring gotcha)
 
@@ -91,7 +91,7 @@ Dry-run with `DRY_RUN=1 ./deploy.sh`. Filter to one skill with `./deploy.sh <nam
 
 ## Adding a new skill
 
-1. Create the repo on GitHub manually: `gh repo create carbonscott/skill-<name> --public`.
+1. Create the repo on GitHub manually: `gh repo create carbonscott/skill-<name> --public`. Use `--public` for skills with no LCLS-internal data tie-ins (all current 15 are public); use `--private` if the skill references internal hostnames, credentials, or non-public data sources.
 2. Populate locally with the layout above.
 3. Push `main`.
 4. Add a manifest entry to `skills.manifest.json`.
