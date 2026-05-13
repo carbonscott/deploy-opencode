@@ -1,0 +1,218 @@
+{
+  "project": "deploy-opencode-externalize",
+  "branch": "externalize-knowledge-wrappers",
+  "description": "Externalize 14 knowledge-wrapper skills into per-repo skill-* GitHub repos under carbonscott/, leaving deploy-opencode with only skills.manifest.json + deploy.sh. cuda-docs (15th wrapper) is the reference skill \u2014 extracted manually in Phase 3 outside this loop. Each story extracts one skill: stages its claude/+opencode/+optional-tools/ layout, populates from the deployed copy at /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/<name>/, pushes to its skill-<name> remote, and verifies deploy.sh dry-runs cleanly. Cron-bearing skills also install a crontab entry on sdfcron001. Read handoff/skill-externalize-guide.md and handoff/skill-audit-2026-05-13.md first \u2014 they are the canonical layout and source-of-truth reference for this work.",
+  "stories": [
+    {
+      "id": "WRAP-01",
+      "title": "Extract ask-ami into skill-ask-ami",
+      "acceptanceCriteria": [
+        "Read handoff/skill-externalize-guide.md (layout + conventions) and handoff/skill-audit-2026-05-13.md (per-skill row for ask-ami)",
+        "Verify carbonscott/skill-ask-ami exists on GitHub via `gh repo view carbonscott/skill-ask-ami --json name` \u2014 if not, log a blocker and stop (user creates repos manually)",
+        "Stage content at /tmp/skill-ask-ami-stage on the bridge worktree host: copy /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-ami/SKILL.md to both claude/skills/ask-ami/SKILL.md and opencode/skills/ask-ami/SKILL.md (identical content, duplicated \u2014 no shared/ dir)",
+        "Write README.md at repo root (one paragraph: what the skill does, link back to deploy-opencode meta-deploy)",
+        "git init -b main, configure user.name/email, commit with subject 'Initial: ask-ami knowledge wrapper'",
+        "git remote add origin git@github.com:carbonscott/skill-ask-ami.git && git push -u origin main",
+        "Verify manifest entry already present: jq '.skills[] | select(.name==\"ask-ami\")' skills.manifest.json (no edit needed, already added in Phase 2)",
+        "Run DRY_RUN=1 ./deploy.sh ask-ami and confirm it clones the new repo and would rsync opencode/skills/ask-ami/ correctly",
+        "Commit any progress to externalize-knowledge-wrappers branch only if the worktree itself changed (it should not \u2014 staging is in /tmp)",
+        "Log a `pattern` notebook entry capturing anything reusable for the next no-cron skill (especially the no-existing-remote case)"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "WRAP-02",
+      "title": "Extract ask-lcls2 into skill-ask-lcls2",
+      "acceptanceCriteria": [
+        "Same pattern as WRAP-01 (read the guide + audit row first)",
+        "Verify carbonscott/skill-ask-lcls2 exists on GitHub; blocker if not",
+        "Stage at /tmp/skill-ask-lcls2-stage with claude/skills/ask-lcls2/SKILL.md + opencode/skills/ask-lcls2/SKILL.md + README.md (source: /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-lcls2/SKILL.md)",
+        "README must note the central_data dependency: /sdf/group/lcls/ds/dm/apps/dev/software/lcls2 (with its .agent_docs/ + .code-index.db, maintained out-of-band by deploy-opencode's update-index.sh)",
+        "git init/commit/push to git@github.com:carbonscott/skill-ask-lcls2.git",
+        "DRY_RUN=1 ./deploy.sh ask-lcls2 succeeds",
+        "Log impl + pattern entries"
+      ],
+      "priority": 2,
+      "passes": true
+    },
+    {
+      "id": "WRAP-03",
+      "title": "Extract ask-smalldata into skill-ask-smalldata",
+      "acceptanceCriteria": [
+        "Same pattern as WRAP-02 (no-cron, central_data points to a software repo)",
+        "Verify carbonscott/skill-ask-smalldata exists; blocker if not",
+        "Stage at /tmp/skill-ask-smalldata-stage; source SKILL.md from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-smalldata/",
+        "README notes the central_data: /sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools (with .agent_docs/ + .code-index.db, manually maintained)",
+        "git init/commit/push to skill-ask-smalldata",
+        "DRY_RUN=1 ./deploy.sh ask-smalldata succeeds"
+      ],
+      "priority": 3,
+      "passes": true
+    },
+    {
+      "id": "WRAP-04",
+      "title": "Reshape skill-ask-slurm-s3df from flat to claude/+opencode/ layout",
+      "acceptanceCriteria": [
+        "Read the audit row: existing flat-layout remote carbonscott/skill-ask-slurm-s3df contains SKILL.md + README.md",
+        "Clone the existing repo to /tmp/skill-ask-slurm-s3df-stage (preserve git history \u2014 do NOT init fresh)",
+        "Move (git mv) SKILL.md \u2192 claude/skills/ask-slurm-s3df/SKILL.md, then duplicate to opencode/skills/ask-slurm-s3df/SKILL.md. Keep README.md at root",
+        "Update README.md to reflect the new layout (claude/+opencode/) and remove any stale instructions",
+        "If the SKILL.md content differs from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-slurm-s3df/SKILL.md, prefer the deployed copy as source of truth (per audit) \u2014 diff them first; if different, replace and note in commit message",
+        "git commit -m 'Reshape into claude/+opencode/ layout' && git push origin main",
+        "DRY_RUN=1 ./deploy.sh ask-slurm-s3df succeeds",
+        "Log a `pattern` entry on the reshape sequence \u2014 future flat-to-claude+opencode stories should reference this"
+      ],
+      "priority": 4,
+      "passes": true
+    },
+    {
+      "id": "WRAP-05",
+      "title": "Reshape skill-askcode from flat to claude/+opencode/ layout",
+      "acceptanceCriteria": [
+        "Audit row: existing carbonscott/skill-askcode is flat (SKILL.md, README.md, env.sh)",
+        "Clone to /tmp/skill-askcode-stage",
+        "Move SKILL.md and env.sh into claude/skills/askcode/ and duplicate to opencode/skills/askcode/. Keep README.md at root",
+        "Diff against /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/askcode/ \u2014 sync any drift toward the deployed copy",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh askcode succeeds (verify env.sh ends up rsynced into the deployed skills/askcode/)"
+      ],
+      "priority": 5,
+      "passes": true
+    },
+    {
+      "id": "WRAP-06",
+      "title": "Reshape skill-docs-search from flat to claude/+opencode/ layout",
+      "acceptanceCriteria": [
+        "Audit row: existing carbonscott/skill-docs-search is flat (SKILL.md, README.md, bin/, env.sh)",
+        "Audit override: docs-search worktree has scripts/ + facility-env.sh + SKILL.md that the deployed copy is missing. Include scripts/ in the new repo (this is the one approved exception to 'deployed is source of truth')",
+        "Clone existing remote to /tmp/skill-docs-search-stage",
+        "Layout: README.md (root), claude/skills/docs-search/{SKILL.md, env.sh, facility-env.sh, scripts/, bin/}, opencode/skills/docs-search/{same files, identical}",
+        "Source SKILL.md from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/docs-search/SKILL.md; source scripts/ from the worktree's claude/skills/docs-search/scripts/ (per the audit exception)",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh docs-search succeeds",
+        "Log a `pattern` entry on the scripts/+bin/+env.sh+facility-env.sh combo"
+      ],
+      "priority": 6,
+      "passes": true
+    },
+    {
+      "id": "WRAP-07",
+      "title": "Extract experimental-hutch-python into skill-experimental-hutch-python",
+      "acceptanceCriteria": [
+        "Audit row: no existing remote; deployed copy has SKILL.md + scripts/ + references/",
+        "Verify carbonscott/skill-experimental-hutch-python exists; blocker if not",
+        "Stage at /tmp/skill-experimental-hutch-python-stage; copy SKILL.md + scripts/ + references/ from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/experimental-hutch-python/ into BOTH claude/skills/experimental-hutch-python/ and opencode/skills/experimental-hutch-python/",
+        "README.md notes this is experimental (per its name and deploy-opencode CLAUDE.md marker)",
+        "git init/commit/push to skill-experimental-hutch-python",
+        "DRY_RUN=1 ./deploy.sh experimental-hutch-python succeeds"
+      ],
+      "priority": 7,
+      "passes": true
+    },
+    {
+      "id": "WRAP-08",
+      "title": "Extract ask-epics into skill-ask-epics (FIRST cron-bearing \u2014 becomes the cron reference)",
+      "acceptanceCriteria": [
+        "This story establishes the cron-bearing skill pattern. After this story passes, the next ralph subagent MUST read this repo as the cron-bearing reference (in addition to cuda-docs as the no-cron reference)",
+        "Audit row: existing remote carbonscott/skill-ask-epics has flat layout + tools/. Cron: weekly Sun 3am",
+        "Clone existing remote to /tmp/skill-ask-epics-stage",
+        "Restructure: claude/skills/ask-epics/{SKILL.md, bin/, env.local, env.sh, setup.sh} + opencode/skills/ask-epics/{identical} + tools/epics-docs/{scripts/epics-docs-cron.sh, ...rest of existing tools/}",
+        "Source skill content from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-epics/; source tools/ from the existing remote OR /sdf/group/lcls/ds/dm/apps/dev/tools/epics-docs/ \u2014 diff first and use whichever is newer/more complete",
+        "Verify env.sh / setup.sh paths still point at /sdf/group/lcls/ds/dm/apps/dev/... after rsync (they should \u2014 they're sourced from deployed location post-deploy)",
+        "Update README.md at root: explain the cron tooling and that tools/epics-docs/ gets rsynced to /sdf/group/lcls/ds/dm/apps/dev/tools/epics-docs/",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh ask-epics succeeds AND shows it would rsync tools/epics-docs/ to /sdf/group/lcls/ds/dm/apps/dev/tools/epics-docs/",
+        "After dry-run looks correct, do NOT run real deploy from this story (operator will run it after reviewing). Stop and ask user to approve crontab install for: 0 3 * * 0 /sdf/group/lcls/ds/dm/apps/dev/tools/epics-docs/scripts/epics-docs-cron.sh on sdfcron001",
+        "Log a `pattern` entry titled 'cron-bearing skill extraction reference' covering: tools/ rsync behaviour, env.sh path stability, crontab schedule format"
+      ],
+      "priority": 8,
+      "passes": true
+    },
+    {
+      "id": "WRAP-09",
+      "title": "Extract ask-nersc into skill-ask-nersc (cron weekly)",
+      "acceptanceCriteria": [
+        "Follow the pattern established by WRAP-08 (ask-epics)",
+        "Audit row: existing remote carbonscott/skill-ask-nersc has flat layout + tools/. Cron: weekly Sun 3am (inventory was wrong \u2014 audit-confirmed)",
+        "Clone, reshape into claude/+opencode/ + tools/nersc-docs/, source content from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-nersc/ and /sdf/group/lcls/ds/dm/apps/dev/tools/nersc-docs/",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh ask-nersc succeeds",
+        "Request crontab install for: 0 3 * * 0 /sdf/group/lcls/ds/dm/apps/dev/tools/nersc-docs/scripts/nersc-docs-cron.sh on sdfcron001"
+      ],
+      "priority": 9,
+      "passes": true
+    },
+    {
+      "id": "WRAP-10",
+      "title": "Extract ask-tiled into skill-ask-tiled (cron weekly)",
+      "acceptanceCriteria": [
+        "Follow WRAP-08 pattern. Existing remote: flat + tools/. Cron: weekly Sun 3am (inventory wrong \u2014 audit-confirmed)",
+        "Clone, reshape, source from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-tiled/ and /sdf/group/lcls/ds/dm/apps/dev/tools/tiled-docs/",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh ask-tiled succeeds",
+        "Request crontab install for: 0 3 * * 0 /sdf/group/lcls/ds/dm/apps/dev/tools/tiled-docs/scripts/tiled-docs-cron.sh"
+      ],
+      "priority": 10,
+      "passes": true
+    },
+    {
+      "id": "WRAP-11",
+      "title": "Extract ask-olcf into skill-ask-olcf (cron RE-ENABLE weekly)",
+      "acceptanceCriteria": [
+        "Audit row: existing remote carbonscott/skill-ask-olcf is flat + tools/. Cron NOT currently scheduled (audit found tools deployed but no crontab entry). User decided: re-enable weekly",
+        "Follow WRAP-08 pattern",
+        "Clone, reshape, source from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-olcf/ and /sdf/group/lcls/ds/dm/apps/dev/tools/olcf-docs/",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh ask-olcf succeeds",
+        "Request crontab install for: 0 3 * * 0 /sdf/group/lcls/ds/dm/apps/dev/tools/olcf-docs/scripts/olcf-docs-cron.sh \u2014 flag explicitly that this is a re-enable (no prior entry), not an update"
+      ],
+      "priority": 11,
+      "passes": true
+    },
+    {
+      "id": "WRAP-12",
+      "title": "Extract ask-s3df into skill-ask-s3df (cron HOURLY \u2014 different schedule)",
+      "acceptanceCriteria": [
+        "Audit row: existing remote carbonscott/skill-ask-s3df is flat + tools/. Cron: HOURLY (inventory said daily \u2014 wrong)",
+        "Follow WRAP-08 pattern but with hourly schedule",
+        "Clone, reshape, source from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-s3df/ and /sdf/group/lcls/ds/dm/apps/dev/tools/sdf-docs/",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh ask-s3df succeeds",
+        "Request crontab install for: 0 * * * * /sdf/group/lcls/ds/dm/apps/dev/tools/sdf-docs/scripts/sdf-docs-cron.sh \u2014 flag explicitly hourly (not daily/weekly)"
+      ],
+      "priority": 12,
+      "passes": true
+    },
+    {
+      "id": "WRAP-13",
+      "title": "Extract ask-slac-ai-tools into skill-ask-slac-ai-tools (post-rename, no cron)",
+      "acceptanceCriteria": [
+        "PRECONDITION: Phase 4 rename must have happened. Run `gh repo view carbonscott/skill-ask-slac-ai-tools --json name` \u2014 if it returns the old name or 404, log a blocker and stop until rename is complete",
+        "Audit row: post-rename layout is flat (SKILL.md, data, env.sh, schemas, scripts, setup.sh). No cron",
+        "Clone renamed remote to /tmp/skill-ask-slac-ai-tools-stage",
+        "Reshape: claude/skills/ask-slac-ai-tools/{SKILL.md, env.sh, setup.sh, schemas/, scripts/, data/, env.local if present} + opencode/skills/ask-slac-ai-tools/{identical}",
+        "Source content from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-slac-ai-tools/ as source of truth",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh ask-slac-ai-tools succeeds"
+      ],
+      "priority": 13,
+      "passes": true
+    },
+    {
+      "id": "WRAP-14",
+      "title": "Extract xpm-seq into skill-xpm-seq (post-rename, no cron)",
+      "acceptanceCriteria": [
+        "PRECONDITION: Phase 4 rename must have happened (carbonscott/xpm-seq-skills \u2192 carbonscott/skill-xpm-seq). Verify with `gh repo view carbonscott/skill-xpm-seq --json name`; if returns old name or 404, blocker",
+        "Audit row: post-rename layout is flat (README.md, SKILL.md, bin/, env.sh, references/). No cron",
+        "Clone renamed remote to /tmp/skill-xpm-seq-stage",
+        "Reshape: claude/skills/xpm-seq/{SKILL.md, bin/, env.sh, references/} + opencode/skills/xpm-seq/{identical}. Keep README.md at root and rewrite it for the new layout",
+        "Source content from /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/xpm-seq/",
+        "Commit + push",
+        "DRY_RUN=1 ./deploy.sh xpm-seq succeeds"
+      ],
+      "priority": 14,
+      "passes": true
+    }
+  ]
+}
