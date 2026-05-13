@@ -1,0 +1,130 @@
+{
+  "_doc": "Knowledge-wrapper skills externalized into per-skill skill-* GitHub repos. Read by ./deploy.sh to populate /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/. See handoff/skill-externalize-guide.md for schema details.",
+  "skills": [
+    {
+      "name": "cuda-docs",
+      "repo": "carbonscott/skill-cuda-docs",
+      "ref": "main",
+      "cron": null,
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/cuda-docs"
+    },
+    {
+      "name": "ask-epics",
+      "repo": "carbonscott/skill-ask-epics",
+      "ref": "main",
+      "cron": {
+        "schedule": "0 3 * * 0",
+        "script": "tools/epics-docs/scripts/epics-docs-cron.sh",
+        "host": "sdfcron001"
+      },
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/epics-docs"
+    },
+    {
+      "name": "ask-nersc",
+      "repo": "carbonscott/skill-ask-nersc",
+      "ref": "main",
+      "cron": {
+        "schedule": "0 3 * * 0",
+        "script": "tools/nersc-docs/scripts/nersc-docs-cron.sh",
+        "host": "sdfcron001"
+      },
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/nersc-docs"
+    },
+    {
+      "name": "ask-s3df",
+      "repo": "carbonscott/skill-ask-s3df",
+      "ref": "main",
+      "cron": {
+        "schedule": "0 * * * *",
+        "script": "tools/sdf-docs/scripts/sdf-docs-cron.sh",
+        "host": "sdfcron001"
+      },
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs"
+    },
+    {
+      "name": "ask-tiled",
+      "repo": "carbonscott/skill-ask-tiled",
+      "ref": "main",
+      "cron": {
+        "schedule": "0 3 * * 0",
+        "script": "tools/tiled-docs/scripts/tiled-docs-cron.sh",
+        "host": "sdfcron001"
+      },
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/tiled-docs"
+    },
+    {
+      "name": "ask-olcf",
+      "repo": "carbonscott/skill-ask-olcf",
+      "ref": "main",
+      "cron": {
+        "schedule": "0 3 * * 0",
+        "script": "tools/olcf-docs/scripts/olcf-docs-cron.sh",
+        "host": "sdfcron001"
+      },
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/olcf-docs"
+    },
+    {
+      "name": "ask-ami",
+      "repo": "carbonscott/skill-ask-ami",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    },
+    {
+      "name": "ask-lcls2",
+      "repo": "carbonscott/skill-ask-lcls2",
+      "ref": "main",
+      "cron": null,
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/software/lcls2"
+    },
+    {
+      "name": "ask-smalldata",
+      "repo": "carbonscott/skill-ask-smalldata",
+      "ref": "main",
+      "cron": null,
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools"
+    },
+    {
+      "name": "ask-slurm-s3df",
+      "repo": "carbonscott/skill-ask-slurm-s3df",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    },
+    {
+      "name": "ask-slac-ai-tools",
+      "repo": "carbonscott/skill-ask-slac-ai-tools",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    },
+    {
+      "name": "askcode",
+      "repo": "carbonscott/skill-askcode",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    },
+    {
+      "name": "docs-search",
+      "repo": "carbonscott/skill-docs-search",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    },
+    {
+      "name": "experimental-hutch-python",
+      "repo": "carbonscott/skill-experimental-hutch-python",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    },
+    {
+      "name": "xpm-seq",
+      "repo": "carbonscott/skill-xpm-seq",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
+    }
+  ]
+}
