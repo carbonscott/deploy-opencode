@@ -75,10 +75,38 @@ if [[ -n "${OPENCODE_SANDBOX_EXTRA:-}" ]]; then
     EXTRA_RO_BINDS+=("${_extra[@]}")
 fi
 
+# --- OpenCode config (always use the shared config) ---
+OPENCODE_CONFIG_DIR="/sdf/group/lcls/ds/dm/apps/dev/opencode"
+
+# --- Resolve opencode binary by absolute path ---
+# Don't rely on the user's PATH or shell function (see docs/setup.md): regular
+# users invoke opencode through a shell wrapper that prepends the bin dir only
+# for its own call, so a bare `exec opencode` fails with "opencode: not found".
+# Resolving the absolute path makes both execution paths work for everyone.
+OPENCODE_BIN_DIR="/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin"
+OPENCODE_BIN="${OPENCODE_BIN_DIR}/opencode"
+if [[ ! -x "$OPENCODE_BIN" ]]; then
+    echo "Error: opencode binary not found: $OPENCODE_BIN" >&2
+    exit 1
+fi
+
+# --- Shared environment (single source of truth for BOTH execution paths) ---
+# The sandbox path turns these into apptainer --env flags; the --no-sandbox
+# path hands them straight to `env`. Keep them here so the two can't drift.
+OPENCODE_ENV=(
+    "USER=${USER}"
+    "OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR}"
+    "UV_CACHE_DIR=/tmp/uv-cache-${USER}"
+    "UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python"
+    "TERM=${TERM:-xterm-256color}"
+    "LANG=${LANG:-en_US.UTF-8}"
+    "PATH=${OPENCODE_BIN_DIR}:/sdf/group/lcls/ds/dm/apps/dev/bin:${PATH}"
+)
+
 # --- No-sandbox escape hatch ---
 if $NO_SANDBOX; then
-    echo "[sandbox] Bypassing sandbox — running OpenCode directly." >&2
-    exec opencode "${OPENCODE_ARGS[@]}"
+    echo "[sandbox] Bypassing sandbox — running OpenCode directly (shared config)." >&2
+    exec env "${OPENCODE_ENV[@]}" "$OPENCODE_BIN" "${OPENCODE_ARGS[@]}"
 fi
 
 # --- Validate SIF ---
@@ -104,17 +132,6 @@ mkdir -p "$SCRATCH_HOME" "$SCRATCH_TMP"
 # --- Copy git config so commits have correct author ---
 if [[ -f "${HOME}/.gitconfig" ]]; then
     cp "${HOME}/.gitconfig" "${SCRATCH_HOME}/.gitconfig" 2>/dev/null || true
-fi
-
-# --- OpenCode config (always use shared config inside sandbox) ---
-OPENCODE_CONFIG_DIR="/sdf/group/lcls/ds/dm/apps/dev/opencode"
-
-# --- Resolve opencode binary (shell function not available inside container) ---
-OPENCODE_BIN_DIR="/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin"
-OPENCODE_BIN="${OPENCODE_BIN_DIR}/opencode"
-if [[ ! -x "$OPENCODE_BIN" ]]; then
-    echo "Error: opencode binary not found: $OPENCODE_BIN" >&2
-    exit 1
 fi
 
 # --- Build bind mount list ---
@@ -202,18 +219,12 @@ for path in "${EXTRA_RW_BINDS[@]}"; do
     fi
 done
 
-# --- Build environment variables ---
+# --- Build environment flags for apptainer (from the shared OPENCODE_ENV) ---
 # Note: --containall blocks --env HOME=..., so we use --home instead
 ENVS=()
-ENVS+=("--env" "USER=${USER}")
-ENVS+=("--env" "OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR}")
-ENVS+=("--env" "UV_CACHE_DIR=/tmp/uv-cache-${USER}")
-ENVS+=("--env" "UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python")
-ENVS+=("--env" "TERM=${TERM:-xterm-256color}")
-ENVS+=("--env" "LANG=${LANG:-en_US.UTF-8}")
-
-# Propagate PATH from host, prepend opencode bin dir
-ENVS+=("--env" "PATH=${OPENCODE_BIN_DIR}:/sdf/group/lcls/ds/dm/apps/dev/bin:${PATH}")
+for kv in "${OPENCODE_ENV[@]}"; do
+    ENVS+=("--env" "$kv")
+done
 
 # --- Assemble the full command ---
 APPTAINER_CMD=(
