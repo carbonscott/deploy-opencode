@@ -45,7 +45,7 @@ echo "Deploying sandbox to ${DEPLOY_BASE} ..."
 if $DRY_RUN; then
     echo "[dry-run] Would copy: $SIF_FILE -> $DEPLOY_SIF"
     echo "[dry-run] Would copy: $LAUNCHER -> $DEPLOY_LAUNCHER"
-    echo "[dry-run] Would fix permissions (chgrp ps-data, chmod g+rX)"
+    echo "[dry-run] Would fix permissions (chgrp ps-users, chmod g+rX)"
     exit 0
 fi
 
@@ -58,9 +58,12 @@ echo "Copying launcher ..."
 cp "$LAUNCHER" "$DEPLOY_LAUNCHER"
 chmod +x "$DEPLOY_LAUNCHER"
 
-# Fix permissions for group access
+# Fix permissions for group access.
+# Group MUST be ps-users (~3744 employees), NOT ps-data (~60): these files are
+# not world-readable, so the group owner is how the broad employee population
+# gets access. Using ps-data here locks out everyone not in that small group.
 echo "Fixing permissions ..."
-chgrp ps-data "$DEPLOY_SIF" "$DEPLOY_LAUNCHER"
+chgrp ps-users "$DEPLOY_SIF" "$DEPLOY_LAUNCHER"
 chmod g+rX "$DEPLOY_SIF" "$DEPLOY_LAUNCHER"
 
 echo ""
