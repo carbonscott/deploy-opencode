@@ -128,10 +128,33 @@ fi
 SCRATCH_HOME="${SCRATCH_BASE}/home"
 SCRATCH_TMP="${SCRATCH_BASE}/tmp"
 mkdir -p "$SCRATCH_HOME" "$SCRATCH_TMP"
+# The sandbox home holds per-user secrets (see the Confluence token below) and
+# SCRATCH defaults to /tmp on a shared node, so keep it owner-only.
+chmod 700 "$SCRATCH_BASE" "$SCRATCH_HOME"
 
 # --- Copy git config so commits have correct author ---
 if [[ -f "${HOME}/.gitconfig" ]]; then
     cp "${HOME}/.gitconfig" "${SCRATCH_HOME}/.gitconfig" 2>/dev/null || true
+fi
+
+# --- Copy the Confluence token into the sandbox home ---
+# The confluence-search skill resolves its token from the passwd database
+# (pwd.getpwuid().pw_dir), not $HOME, so apptainer's --home override does not
+# redirect it: it looks under /sdf/home, which the sandbox deliberately does not
+# bind. Copy the token in and point CONFLUENCE_TOKEN_FILE at the copy — the
+# skill checks that variable before it consults passwd.
+HOST_CONFLUENCE_TOKEN="${HOME}/.config/confluence-search/token"
+SANDBOX_CONFLUENCE_TOKEN="${SCRATCH_HOME}/.config/confluence-search/token"
+if [[ -f "$HOST_CONFLUENCE_TOKEN" ]]; then
+    mkdir -p "$(dirname "$SANDBOX_CONFLUENCE_TOKEN")"
+    chmod 700 "$(dirname "$SANDBOX_CONFLUENCE_TOKEN")"
+    # The skill refuses any token file readable by group or others, so do not
+    # let the ambient umask decide the mode.
+    if install -m 600 "$HOST_CONFLUENCE_TOKEN" "$SANDBOX_CONFLUENCE_TOKEN" 2>/dev/null; then
+        OPENCODE_ENV+=("CONFLUENCE_TOKEN_FILE=${SANDBOX_CONFLUENCE_TOKEN}")
+    else
+        echo "[sandbox] Warning: could not copy Confluence token; confluence-search will not authenticate" >&2
+    fi
 fi
 
 # --- Build bind mount list ---
@@ -143,13 +166,10 @@ BINDS+=("--bind" "/lib64:/lib64:ro")
 BINDS+=("--bind" "/bin:/bin:ro")
 BINDS+=("--bind" "/sbin:/sbin:ro")
 
-# Shared deployment directory (read-only)
+# Shared deployment directory (read-only).
+# The opencode API keys (dev/env/key.dat, dev/env/slac-key.dat — referenced by
+# the shared opencode.json) come in via this bind; no separate key bind needed.
 BINDS+=("--bind" "/sdf/group/lcls/ds/dm/apps/dev:/sdf/group/lcls/ds/dm/apps/dev:ro")
-
-# API key (read-only)
-if [[ -f /sdf/group/lcls/ds/dm/apps/etc/key.dat ]]; then
-    BINDS+=("--bind" "/sdf/group/lcls/ds/dm/apps/etc/key.dat:/sdf/group/lcls/ds/dm/apps/etc/key.dat:ro")
-fi
 
 # Science data (read-only)
 if [[ -d /sdf/data/lcls ]]; then
