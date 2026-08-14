@@ -132,6 +132,13 @@
       "ref": "main",
       "cron": null,
       "central_data": null
+    },
+    {
+      "name": "elog-search",
+      "repo": "carbonscott/slac-elog-search",
+      "ref": "main",
+      "cron": null,
+      "central_data": null
     }
   ]
 }
