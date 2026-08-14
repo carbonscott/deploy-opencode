@@ -8,7 +8,8 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 
 | Path | Owner | Purpose |
 |------|-------|---------|
-| `etc/key.dat` | IT | API key (read-only for employees) |
+| `etc/key.dat` | IT | IT-managed API key (group ps-data); **not** used by the current `opencode.json` |
+| `dev/env/key.dat`, `dev/env/slac-key.dat` | You | opencode API keys referenced by `opencode.json` (group ps-users, `0640`); other `dev/env/*.dat` secrets stay owner-only `0600` |
 | `dev/bin/uv` | You | Shared uv binary (for lcls-catalog, tree-sitter-db, etc.) |
 | `dev/bin/docs-index` | You | Shared docs-index script (FTS5 indexer for doc collections) |
 | `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11); venvs symlink here instead of per-user `~/.local/share/uv/python/` |
@@ -28,6 +29,9 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/experimental-hutch-python/` | You | experimental-hutch-python skill [EXPERIMENTAL] (beamline control assistant + IPython bridge) |
 | `dev/opencode/skills/ask-olcf/` | You | ask-olcf skill (OLCF documentation assistant) |
 | `dev/opencode/skills/ask-epics/` | You | ask-epics skill (EPICS documentation assistant) |
+| `dev/opencode/skills/ask-slac-ai-tools/` | You | ask-slac-ai-tools skill (which AI tools are approved at SLAC, including PHI/CUI eligibility) |
+| `dev/opencode/skills/confluence-search/` | You | confluence-search skill (live CQL search of SLAC Confluence; **per-user token**, no shared credential) |
+| `dev/opencode/skills/elog-search/` | You | elog-search skill (live read-only search of the LCLS eLog; **per-user S3DF token**, no shared credential) |
 | `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
 | `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
 | `dev/data/olcf-docs/` | You | olcf-user-docs git repo with FTS5 search index (from olcf/olcf-user-docs) |
@@ -36,6 +40,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/tools/epics-docs/` | You | epics-docs sync scripts (weekly git pull + re-index) |
 | `dev/data/cuda-docs/` | You | CUDA documentation markdown files (Best Practices, Runtime API, Driver API) |
 | `dev/data/nano-isaac/` | You | nanoISAAC data files (JSON databases, Python scripts, experimental data) |
+| `dev/data/ask-slac-ai-tools/ai-tooling.db` | You | SLAC AI tools SQLite DB (FTS5; ~53 tools, 5 data classifications, 12 policy resources) |
 | `dev/software/lcls2/` | You | lcls2 git repo with .agent_docs and .code-index.db |
 | `dev/software/smalldata_tools/` | You | smalldata_tools git repo with .agent_docs and .code-index.db |
 | `dev/data/confluence-doc/lcls-docs.db` | You | Confluence docs SQLite DB |
@@ -64,7 +69,7 @@ Deployed files are copies (not symlinks) from these source projects:
 | `agents/daq-logs.md` | `/sdf/data/lcls/ds/prj/prjcwang31/results/proj-debug-daq/.opencode/agents/daq-logs.md` |
 | `agents/confluence-doc.md` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/proj-confluence-llm/.opencode/agents/confluence-doc.md` |
 | `skills/lcls-catalog/` | `/sdf/scratch/users/c/cwang31/proj-lcls-catalog/.opencode/skills/lcls-catalog/` |
-| `data/confluence-doc/lcls-docs.db` | Cron job via `tools/confluence-doc/scripts/confluence-cron.sh` (every hour on sdfcron001) |
+| `data/confluence-doc/lcls-docs.db` | Cron job via `tools/confluence-doc/scripts/confluence-cron.sh` (daily at midnight on sdfcron001) |
 | `tools/confluence-doc/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/proj-confluence-llm/` (minimal file set, git repo) |
 | `data/daq-logs/daq_logs.db` | Cron job via `tools/daq-logs/scripts/run_daq_log_sync.sh` (every 5 min on sdfcron001) |
 | `tools/daq-logs/` | `git@github.com:carbonscott/lcls-daq-browser-indexing-scripts.git` |
@@ -106,13 +111,17 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/ask-epics/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-epics/` |
 | `data/epics-docs/` | `https://github.com/epics-base/*.git` (26 repos); cron via `tools/epics-docs/scripts/epics-docs-cron.sh` (weekly) |
 | `tools/epics-docs/` | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-epics/tools/` |
+| `skills/ask-slac-ai-tools/` | `git@github.com:carbonscott/ask-slac-ai-tools.git` cloned to `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slac-ai-tools/` |
+| `data/ask-slac-ai-tools/ai-tooling.db` | Built via `setup.sh` in source clone, then `cp build/ai-tooling.db /sdf/group/lcls/ds/dm/apps/dev/data/ask-slac-ai-tools/` (no cron — static curated data) |
+| `skills/confluence-search/` | `git@github.com:carbonscott/slac-confluence-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries Confluence live) |
+| `skills/elog-search/` | `git@github.com:carbonscott/slac-elog-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries the eLog live) |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
 ## Updating Deployed Data
 
 ```bash
-# Confluence docs DB — managed by cron (every hour via tools/confluence-doc/scripts/confluence-cron.sh)
+# Confluence docs DB — managed by cron (daily at midnight via tools/confluence-doc/scripts/confluence-cron.sh)
 # No manual copy needed. To check status:
 #   /sdf/group/lcls/ds/dm/apps/dev/tools/confluence-doc/scripts/confluence-cron.sh status
 
@@ -140,16 +149,28 @@ rsync -a --exclude='.uv-cache' \
 # epics-docs — managed by cron (weekly via tools/epics-docs/scripts/epics-docs-cron.sh)
 # No manual copy needed. To check status:
 #   tail /sdf/group/lcls/ds/dm/apps/dev/data/epics-docs/cron.log
+
+# ask-slac-ai-tools — static curated data (no cron). To refresh:
+#   cd /sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slac-ai-tools
+#   git pull && UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python ./setup.sh
+#   cp build/ai-tooling.db /sdf/group/lcls/ds/dm/apps/dev/data/ask-slac-ai-tools/ai-tooling.db
+
+# confluence-search — no data to sync (live API). Manifest-driven like the other
+# externalized skills; to ship a new version, push upstream then:
+#   ./deploy.sh confluence-search
+
+# elog-search — no data to sync (live API), same as confluence-search:
+#   ./deploy.sh elog-search
 ```
 
 ## Key Config Details
 
-- `opencode.json` references the API key via `{file:/sdf/group/lcls/ds/dm/apps/etc/key.dat}`
+- `opencode.json` references two API keys: `{file:/sdf/group/lcls/ds/dm/apps/dev/env/key.dat}` (Anthropic) and `{file:/sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat}` (SLAC gateway). Both are group `ps-users`, `0640`; re-assert with `tools/fix-key-perms.sh`. The IT-managed `etc/key.dat` is **not** used by the current config.
 - Config precedence: global user < OPENCODE_CONFIG_DIR < project < OPENCODE_CONFIG_CONTENT
 - The `tools/lcls-catalog/env.sh` defines the `lcat` shell function and sets `LCLS_CATALOG_APP_DIR` and `CATALOG_DATA_DIR`
 - The `tools/daq-logs/scripts/env.sh` sets `DAQ_LOGS_APP_DIR` and `DAQ_LOGS_DATA_DIR`; cron job runs every 5 min syncing DAQ logs to `data/daq-logs/`
 - The `tools/elog-copilot/env.sh` defines `ELOG_COPILOT_APP_DIR` and `ELOG_COPILOT_DATA_DIR`; cron job runs every 6 hours updating `data/elog-copilot/elog-copilot.db`
-- The `tools/confluence-doc/env.sh` defines `CONFLUENCE_DOC_APP_DIR` and `CONFLUENCE_DOC_DATA_DIR`; cron job runs every hour exporting Confluence docs to `data/confluence-doc/lcls-docs.db`
+- The `tools/confluence-doc/env.sh` defines `CONFLUENCE_DOC_APP_DIR` and `CONFLUENCE_DOC_DATA_DIR`; cron job runs daily at midnight exporting Confluence docs to `data/confluence-doc/lcls-docs.db`
 - The `tools/smartsheet/env.sh` defines `SMARTSHEET_APP_DIR` and `SMARTSHEET_DATA_DIR`; reads API key from `dev/env/smartsheet.dat`; cron job runs daily syncing closeout data to `data/smartsheet/`
 - The `tools/tree-sitter-db/env.sh` defines `TREE_SITTER_DB_APP_DIR` and `TREE_SITTER_DB_DATA_DIR`; provides `tsdb` wrapper for on-demand code indexing (no cron job)
 - The `tools/nano-isaac/env.sh` defines `NANO_ISAAC_APP_DIR` and `NANO_ISAAC_DATA_DIR`; provides `nano_isaac_run` wrapper for DTCS runtime (no cron job)
@@ -157,8 +178,31 @@ rsync -a --exclude='.uv-cache' \
 - The `tools/sdf-docs/env.sh` defines `SDF_DOCS_APP_DIR` and `SDF_DOCS_DATA_DIR`; cron job runs daily syncing sdf-docs repo and rebuilding FTS5 search index
 - The `tools/olcf-docs/env.sh` defines `OLCF_DOCS_APP_DIR` and `OLCF_DOCS_DATA_DIR`; cron job runs weekly syncing olcf-user-docs repo and rebuilding FTS5 search index
 - The `tools/epics-docs/env.sh` defines `EPICS_DOCS_APP_DIR` and `EPICS_DOCS_DATA_DIR`; cron job runs weekly syncing 26 epics-base repos and rebuilding FTS5 search index
-- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`, `agents/find-rings -> ../skills/find-rings`, `agents/experimental-hutch-python -> ../skills/experimental-hutch-python`, `agents/ask-olcf -> ../skills/ask-olcf`, `agents/ask-epics -> ../skills/ask-epics`
+- **Skills need symlinks in agents/ for @invocation**: Opencode loads from `agents/` directory. Skills in `skills/` need symlinks in `agents/` to be invoked with `@skill-name`. Current symlinks: `agents/askcode -> ../skills/askcode`, `agents/lcls-catalog -> ../skills/lcls-catalog`, `agents/ask-lcls2 -> ../skills/ask-lcls2`, `agents/ask-smalldata -> ../skills/ask-smalldata`, `agents/cuda-docs -> ../skills/cuda-docs`, `agents/ask-slurm-s3df -> ../skills/ask-slurm-s3df`, `agents/nano-isaac -> ../skills/nano-isaac`, `agents/docs-search -> ../skills/docs-search`, `agents/ask-s3df -> ../skills/ask-s3df`, `agents/find-rings -> ../skills/find-rings`, `agents/experimental-hutch-python -> ../skills/experimental-hutch-python`, `agents/ask-olcf -> ../skills/ask-olcf`, `agents/ask-epics -> ../skills/ask-epics`, `agents/ask-slac-ai-tools -> ../skills/ask-slac-ai-tools`, `agents/confluence-search -> ../skills/confluence-search`. Links are **relative**; `deploy.sh` creates them automatically for manifest skills. The symlink's own group/mode is irrelevant — Linux checks the target's permissions, not the link's.
 - The `software/update-index.sh` script updates git repos and regenerates code indexes: `./update-index.sh [lcls2|smalldata_tools|all]`
+
+## Group Ownership Policy
+
+The shared deployment serves the whole employee population — **group `ps-users` (~3700)**, not
+`ps-data` (~60). Getting this wrong silently locks employees out (see the xppopr key incident and
+the earlier `dev/bin` lockout). Rules:
+
+- **Default: `ps-users` + `g+rX`** for everything under `dev/` that employees read or run —
+  `opencode/` (skills/agents/commands), `tools/`, `data/`, `software/`, `python/`, `bin/`. All
+  deploy/cron scripts chgrp to `ps-users` (`deploy.sh` defaults `GROUP=ps-users`).
+- **Only exceptions kept on `ps-data`:** the elog tools — `tools/elog-copilot`,
+  `tools/elogfetch-pr-review`, `tools/elog-copilot-pr-2026-0225` — and `data/elog-copilot`.
+- **`dev/env` secrets stay locked:** the directory is `ps-data` with a *traverse-only* ACL
+  (`group:ps-users:--x` — no list, no default ACL); only the two opencode API keys are group
+  `ps-users` `0640`, the other four `*.dat` secrets stay `0600`. Re-assert with
+  `tools/fix-key-perms.sh` after rotating or adding a key.
+- **Audit for lockouts** (should report only the elog exceptions, plus stray `psdatmgr`-owned
+  junk like `code/.lesshst`):
+  ```bash
+  find /sdf/group/lcls/ds/dm/apps/dev -path '*/env' -prune -o \
+    \( ! -perm -o+r ! -group ps-users -printf '%u %p\n' \)
+  ```
+- `dev/code` is owned by `psdatmgr` (shared opencode binary install) — leave it to IT.
 
 ## uv for Shared Deployment
 
@@ -167,7 +211,7 @@ The shared tools use `uv` to manage Python projects. Three settings are critical
 1. **`UV_PYTHON_INSTALL_DIR="/sdf/group/lcls/ds/dm/apps/dev/python"`** — Python interpreters must live in a shared location, not `~/.local/share/uv/python/` (which is owner-only). Each env.sh exports this. When adding a new Python version:
    ```bash
    UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python uv python install 3.XX
-   chgrp -R ps-data /sdf/group/lcls/ds/dm/apps/dev/python && chmod -R g+rX /sdf/group/lcls/ds/dm/apps/dev/python
+   chgrp -R ps-users /sdf/group/lcls/ds/dm/apps/dev/python && chmod -R g+rX /sdf/group/lcls/ds/dm/apps/dev/python
    ```
 
 2. **`UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache-$USER}"`** — `uv` needs write access to its cache. Each user gets their own cache in `/tmp/`. Cron jobs can override via `env.local`.
@@ -329,6 +373,93 @@ When modifying an agent or skill, update all copies. Changes in the source are f
 | Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/experimental-hutch-python/SKILL.md` |
 | Source (skill + scripts) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/experimental-hutch-python/` |
 | Prototype | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/fun-stuff/test-hutch-python/` |
+
+### ask-slac-ai-tools
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/ask-slac-ai-tools/SKILL.md` |
+| Source (git clone) | `/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/skills/ask-slac-ai-tools/` |
+| Upstream repo | `git@github.com:carbonscott/ask-slac-ai-tools.git` |
+| Data (SQLite DB) | `/sdf/group/lcls/ds/dm/apps/dev/data/ask-slac-ai-tools/ai-tooling.db` |
+
+### confluence-search
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/confluence-search/SKILL.md` |
+| Upstream repo | `git@github.com:carbonscott/slac-confluence-search.git` (manifest entry; deploy staging clone under `/tmp/skill-deploy-$USER/`) |
+| Maintainer clone | `/sdf/data/lcls/ds/prj/prjcwang31/results/confluence-search/` (for local work only — **not** the deploy source) |
+
+**Per-user token, and the sandbox needs help finding it (2026-08-13).** The skill
+authenticates with each user's own Confluence personal access token — there is no shared
+credential, and results are filtered by that account's wiki permissions. Two things follow:
+
+- **Every user must run `scripts/confluence-login` themselves, on the host** (not inside the
+  sandbox, where the write lands in the scratch home and is lost). They mint the token first at
+  `https://confluence.slac.stanford.edu/plugins/personalaccesstokens/usertokens.action`.
+- **`cqlsearch.py` resolves the token from the passwd database (`pwd.getpwuid().pw_dir`), not
+  `$HOME`** — deliberate, so it stays correct under cron/sudo. But that defeats apptainer's
+  `--home` override: inside `opencode-sandbox` it looks under `/sdf/home`, which the sandbox does
+  not bind, and the skill reports a missing token. `sandbox/bin/opencode-sandbox` therefore copies
+  the token into the scratch home at launch (mode `600` — the skill rejects any token file
+  readable by group or others) and exports `CONFLUENCE_TOKEN_FILE`, which is checked *before* the
+  passwd lookup. Consequences: a token rotated mid-session is stale until restart, and
+  `confluence-login --force` run inside the sandbox does not persist.
+
+**Deployed as a real copy, not a symlink.** It was first deployed with the upstream repo's own
+`install.sh`, which defaults to symlinking — the link pointed into `prjcwang31/results/`, whose
+parent chain is `ps-data`-only, so it was invisible to the ~3700 `ps-users` employees. Upstream
+now picks the mode from the destination (symlink under `$HOME`, copy anywhere else), but the
+shared tree should be deployed with `./deploy.sh confluence-search`, not `install.sh` — that
+installer exists for people running Claude Code on their own machine.
+
+**The repo name breaks the `skill-<name>` convention on purpose.** The manifest's explicit `repo`
+field makes the name irrelevant to deployment, so `slac-confluence-search` was left alone rather
+than renamed. Layout inside the repo does still have to match: `opencode/skills/<name>/` is the
+only path `deploy.sh` reads.
+
+### elog-search
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/elog-search/SKILL.md` |
+| Upstream repo | `git@github.com:carbonscott/slac-elog-search.git` (manifest entry; staging clone under `/tmp/skill-deploy-$USER/`) |
+
+Read-only by construction: every HTTP call goes through `_get()`, which refuses any route
+outside its `READ_ROUTES` allowlist. There is no shared-account fallback anywhere — results are
+filtered by the invoking user's own eLog roles, so two people running the same search legitimately
+see different numbers of experiments.
+
+**Credential: the user's own S3DF OAuth2 token, minted with `s3df login`.** Each user runs
+`/sdf/sw/s3df-cli/bin/s3df login` once (browser + MFA); the token lands in
+`~/.s3df-access-token` with metadata in `~/.s3df-token.json`, and refreshes from the stored
+refresh token thereafter. The skill also has a Kerberos path, but upstream keeps it undocumented
+and we do not use it — see below.
+
+**Sandbox: the token is bind-mounted, unlike the Confluence one, which is copied.** Both skills
+need a credential across the `opencode-sandbox` boundary, but the right mechanism differs:
+
+- `s3df login` refreshes by truncating `~/.s3df-access-token` **in place** (shell `>`), so the
+  inode is stable and a read-only bind lets a running sandbox see a renewed token. It also keeps
+  a second copy of the refresh token off `/sdf/scratch`.
+- `confluence-login --force` unlinks and re-creates with `O_CREAT|O_EXCL` — new inode — so a bind
+  would go stale anyway; that one stays a copy.
+
+`sandbox/bin/opencode-sandbox` binds both S3DF files read-only at their real paths and exports
+`S3DF_TOKEN_FILE` / `S3DF_TOKEN_META`. Those are the names `s3df-login` itself documents and
+elog-search honours, so the container never depends on home resolution.
+
+**Kerberos is deliberately not forwarded into the sandbox.** A TGT is a delegatable bearer
+credential, `/usr` is bound so `ssh` exists inside the container, and SLAC accepts GSSAPI —
+forwarding one would re-enable exactly the SSH the sandbox advertises as disabled. (It is also
+mechanically unreachable today: `$KRB5CCNAME` is stripped by `--containall`, host `/tmp` is masked
+by the scratch `/tmp`, and `/run/user` is unbound.) With no ccache present the skill's resolver
+falls straight through to the S3DF token, so no `--auth` flag is needed.
+
+**Trap worth knowing:** when no credential is usable the skill tells the user to run `kinit` or
+`s3df login`. Inside the sandbox `kinit` will never help — the ticket lands on the host and cannot
+cross the boundary. The fix is always `s3df login` **on the host**, then restart the sandbox.
 
 ### commands (approval, clarify, taskify, clarify-before-research)
 
