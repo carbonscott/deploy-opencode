@@ -25,7 +25,7 @@ TOOLS_DST="$DEPLOY_ROOT/tools"
 STAGING_ROOT="${STAGING_ROOT:-/tmp/skill-deploy-$USER}"
 MANIFEST="${MANIFEST:-$(cd "$(dirname "$0")" && pwd)/skills.manifest.json}"
 DRY_RUN="${DRY_RUN:-0}"
-GROUP="${PS_DATA_GROUP:-ps-data}"
+GROUP="${PS_USERS_GROUP:-ps-users}"
 
 mkdir -p "$STAGING_ROOT"
 
