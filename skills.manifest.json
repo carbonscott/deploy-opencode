@@ -6,7 +6,15 @@
       "repo": "carbonscott/skill-cuda-docs",
       "ref": "main",
       "cron": null,
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/cuda-docs"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/cuda-docs",
+      "harness": {
+        "source": "claude/skills/cuda-docs",
+        "name": "cuda-docs",
+        "kind": "skill",
+        "slug": "cuda-docs",
+        "description_auto": "Search NVIDIA CUDA documentation (Best Practices Guide, Runtime API, Driver API). Use for CUDA programming questions, API lookups, memory management, kernel optimization, streams, events, and GPU programming patterns.",
+        "description_menu": "Search NVIDIA CUDA documentation (Best Practices Guide, Runtime API, Driver API). Use for CUDA programming questions, API lookups, memory management, kernel optimization, streams, events, and GPU programming patterns."
+      }
     },
     {
       "name": "ask-epics",
@@ -17,7 +25,15 @@
         "script": "tools/epics-docs/scripts/epics-docs-cron.sh",
         "host": "sdfcron001"
       },
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/epics-docs"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/epics-docs",
+      "harness": {
+        "source": "claude/skills/ask-epics",
+        "name": "ask-epics",
+        "kind": "skill",
+        "slug": "ask-epics",
+        "description_auto": "EPICS documentation assistant. Use when users ask about EPICS, IOC, Channel Access, PVAccess, pvxs, pvaPy, p4p, epics-base, epicscorelibs, epicsCoreJava, record types, or any Experimental Physics and Industrial Control System topic.",
+        "description_menu": "EPICS documentation assistant. Use when users ask about EPICS, IOC, Channel Access, PVAccess, pvxs, pvaPy, p4p, epics-base, epicscorelibs, epicsCoreJava, record types, or any Experimental Physics and Industrial Control System topic."
+      }
     },
     {
       "name": "ask-nersc",
@@ -28,7 +44,15 @@
         "script": "tools/nersc-docs/scripts/nersc-docs-cron.sh",
         "host": "sdfcron001"
       },
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/nersc-docs"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/nersc-docs",
+      "harness": {
+        "source": "claude/skills/ask-nersc",
+        "name": "ask-nersc",
+        "kind": "skill",
+        "slug": "ask-nersc",
+        "description_auto": "NERSC documentation assistant. Use when users ask about Perlmutter, NERSC filesystems, Slurm on NERSC, Python/ML at NERSC, containers (Shifter, Podman-hpc), Spin, Superfacility API, NERSC accounts/allocations, or any National Energy Research Scientific Computing Center topic.",
+        "description_menu": "NERSC documentation assistant. Use when users ask about Perlmutter, NERSC filesystems, Slurm on NERSC, Python/ML at NERSC, containers (Shifter, Podman-hpc), Spin, Superfacility API, NERSC accounts/allocations, or any National Energy Research Scientific Computing Center topic."
+      }
     },
     {
       "name": "ask-s3df",
@@ -39,7 +63,15 @@
         "script": "tools/sdf-docs/scripts/sdf-docs-cron.sh",
         "host": "sdfcron001"
       },
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs",
+      "harness": {
+        "source": "claude/skills/ask-s3df",
+        "name": "ask-s3df",
+        "kind": "skill",
+        "slug": "ask-s3df",
+        "description_auto": "S3DF documentation assistant. Use when users ask about S3DF accounts, access, Slurm, storage, data transfer, conda, Jupyter, MPI, containers, or any SLAC Shared Scientific Data Facility topic.",
+        "description_menu": "S3DF documentation assistant. Use when users ask about S3DF accounts, access, Slurm, storage, data transfer, conda, Jupyter, MPI, containers, or any SLAC Shared Scientific Data Facility topic."
+      }
     },
     {
       "name": "ask-tiled",
@@ -50,7 +82,15 @@
         "script": "tools/tiled-docs/scripts/tiled-docs-cron.sh",
         "host": "sdfcron001"
       },
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/tiled-docs"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/tiled-docs",
+      "harness": {
+        "source": "claude/skills/ask-tiled",
+        "name": "ask-tiled",
+        "kind": "skill",
+        "slug": "ask-tiled",
+        "description_auto": "Tiled documentation assistant. Use when users ask about Tiled server/client, bluesky/tiled data access service, Tiled catalog, HTTP API, Tiled authentication (OIDC, API keys), Tiled deployment (Docker, Helm, Kubernetes), Tiled profiles, data structures (arrays, dataframes, awkward arrays), streaming, or any Tiled configuration topic.",
+        "description_menu": "Tiled documentation assistant. Use when users ask about Tiled server/client, bluesky/tiled data access service, Tiled catalog, HTTP API, Tiled authentication (OIDC, API keys), Tiled deployment (Docker, Helm, Kubernetes), Tiled profiles, data structures (arrays, dataframes, awkward arrays), streaming, or any Tiled configuration topic."
+      }
     },
     {
       "name": "ask-olcf",
@@ -61,84 +101,180 @@
         "script": "tools/olcf-docs/scripts/olcf-docs-cron.sh",
         "host": "sdfcron001"
       },
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/olcf-docs"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/olcf-docs",
+      "harness": {
+        "source": "claude/skills/ask-olcf",
+        "name": "ask-olcf",
+        "kind": "skill",
+        "slug": "ask-olcf",
+        "description_auto": "OLCF documentation assistant. Use when users ask about Frontier, Andes, Defiant, OLCF storage, data transfer, Slurm on OLCF, software (PyTorch, containers), quantum computing, SLATE, accounts, or any Oak Ridge Leadership Computing Facility topic.",
+        "description_menu": "OLCF documentation assistant. Use when users ask about Frontier, Andes, Defiant, OLCF storage, data transfer, Slurm on OLCF, software (PyTorch, containers), quantum computing, SLATE, accounts, or any Oak Ridge Leadership Computing Facility topic."
+      }
     },
     {
       "name": "ask-ami",
       "repo": "carbonscott/skill-ask-ami",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/ask-ami",
+        "name": "ask-ami",
+        "kind": "skill",
+        "slug": "ask-ami",
+        "description_auto": "Expert assistant for the AMI (Analysis Monitoring Interface) codebase. Use when users ask about AMI graph nodes, computation graphs, flowchart GUI, workers, collectors, managers, data sources, ZMQ communication, PV export, or LCLS-II online monitoring code.",
+        "description_menu": "Expert assistant for the AMI (Analysis Monitoring Interface) codebase. Use when users ask about AMI graph nodes, computation graphs, flowchart GUI, workers, collectors, managers, data sources, ZMQ communication, PV export, or LCLS-II online monitoring code."
+      }
     },
     {
       "name": "ask-lcls2",
       "repo": "carbonscott/skill-ask-lcls2",
       "ref": "main",
       "cron": null,
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/software/lcls2"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/software/lcls2",
+      "harness": {
+        "source": "claude/skills/ask-lcls2",
+        "name": "ask-lcls2",
+        "kind": "skill",
+        "slug": "ask-lcls2",
+        "description_auto": "Expert assistant for the lcls2/psana2 codebase. Use when users ask about psana2 API, DataSource, Run, Detector interfaces, calibration, MPI parallel processing, or LCLS-II data analysis code. Searches curated documentation and code index.",
+        "description_menu": "Expert assistant for the lcls2/psana2 codebase. Use when users ask about psana2 API, DataSource, Run, Detector interfaces, calibration, MPI parallel processing, or LCLS-II data analysis code. Searches curated documentation and code index."
+      }
     },
     {
       "name": "ask-smalldata",
       "repo": "carbonscott/skill-ask-smalldata",
       "ref": "main",
       "cron": null,
-      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools"
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/software/smalldata_tools",
+      "harness": {
+        "source": "claude/skills/ask-smalldata",
+        "name": "ask-smalldata",
+        "kind": "skill",
+        "slug": "ask-smalldata",
+        "description_auto": "Expert assistant for smalldata_tools codebase. Use when users ask about DetObjectFunc, ROI, azimuthal binning, droplet/photon detection, smd_producer, cube production, SmallDataAna, or LCLS smalldata HDF5 processing code.",
+        "description_menu": "Expert assistant for smalldata_tools codebase. Use when users ask about DetObjectFunc, ROI, azimuthal binning, droplet/photon detection, smd_producer, cube production, SmallDataAna, or LCLS smalldata HDF5 processing code."
+      }
     },
     {
       "name": "ask-slurm-s3df",
       "repo": "carbonscott/skill-ask-slurm-s3df",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/ask-slurm-s3df",
+        "name": "ask-slurm-s3df",
+        "kind": "skill",
+        "slug": "ask-slurm-s3df",
+        "description_auto": "Expert assistant for SLAC's S3DF Slurm cluster (24.11.3). Use when users ask about job submission, pending reasons, GPU allocation, partition selection, fairshare, account limits, node health, or any Slurm question on S3DF. Runs live Slurm commands to answer questions.",
+        "description_menu": "Expert assistant for SLAC's S3DF Slurm cluster (24.11.3). Use when users ask about job submission, pending reasons, GPU allocation, partition selection, fairshare, account limits, node health, or any Slurm question on S3DF. Runs live Slurm commands to answer questions."
+      }
     },
     {
       "name": "ask-slac-ai-tools",
       "repo": "carbonscott/skill-ask-slac-ai-tools",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/ask-slac-ai-tools",
+        "name": "ask-slac-ai-tools",
+        "kind": "skill",
+        "slug": "ask-slac-ai-tools",
+        "description_auto": "SLAC AI tools assistant. Use when users ask which AI tools they can use at SLAC, how to access Claude / Claude Code at SLAC, the SLAC AI Accelerator, AI API keys at SLAC, Microsoft 365 Copilot at SLAC, Stanford AI Playground or AI API Gateway for SLAC users, AI tools approved for PHI / CUI / Moderate-Risk / Low-Risk data, GitHub Copilot or Cursor at SLAC, AI meeting bots / transcription, or which AI tools are NOT approved at SLAC/Stanford.",
+        "description_menu": "SLAC AI tools assistant. Use when users ask which AI tools they can use at SLAC, how to access Claude / Claude Code at SLAC, the SLAC AI Accelerator, AI API keys at SLAC, Microsoft 365 Copilot at SLAC, Stanford AI Playground or AI API Gateway for SLAC users, AI tools approved for PHI / CUI / Moderate-Risk / Low-Risk data, GitHub Copilot or Cursor at SLAC, AI meeting bots / transcription, or which AI tools are NOT approved at SLAC/Stanford."
+      }
     },
     {
       "name": "askcode",
       "repo": "carbonscott/skill-askcode",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/askcode",
+        "name": "askcode",
+        "kind": "skill",
+        "slug": "askcode",
+        "description_auto": "Code indexing and navigation using tree-sitter. Use when users want to find functions, search code structure, analyze call graphs, find callers/callees, index a repository, or navigate code architecture for Python/C/C++ codebases.",
+        "description_menu": "Code indexing and navigation using tree-sitter. Use when users want to find functions, search code structure, analyze call graphs, find callers/callees, index a repository, or navigate code architecture for Python/C/C++ codebases."
+      }
     },
     {
       "name": "docs-search",
       "repo": "carbonscott/skill-docs-search",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/docs-search",
+        "name": "docs-search",
+        "kind": "skill",
+        "slug": "docs-search",
+        "description_auto": "Strategy guide for searching local documentation collections. Use when users ask questions that can be answered from local docs, need to search a docs folder, or want to index documentation.",
+        "description_menu": "Strategy guide for searching local documentation collections. Use when users ask questions that can be answered from local docs, need to search a docs folder, or want to index documentation."
+      }
     },
     {
       "name": "experimental-hutch-python",
       "repo": "carbonscott/skill-experimental-hutch-python",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/experimental-hutch-python",
+        "name": "experimental-hutch-python",
+        "kind": "skill",
+        "slug": "experimental-hutch-python",
+        "description_auto": "[EXPERIMENTAL] Expert assistant for hutch-python beamline control sessions. Answers questions about hutch-python configuration, Bluesky scanning, DAQ, device loading, presets, lightpath, and debugging. Can optionally execute commands in a live hutch-python session via the IPython bridge (requires SSH tunnel setup). Triggers on: hutch-python, hutch python, beamline control, conf.yml, happi, lightpath, beampath, RunEngine, RE, bluesky plans, DAQ, presets, xxxpython, hutch session, motor groups, device loading.",
+        "description_menu": "[EXPERIMENTAL] Expert assistant for hutch-python beamline control sessions. Answers questions about hutch-python configuration, Bluesky scanning, DAQ, device loading, presets, lightpath, and debugging. Can optionally execute commands in a live hutch-python session via the IPython bridge (requires SSH tunnel setup). Triggers on: hutch-python, hutch python, beamline control, conf.yml, happi, lightpath, beampath, RunEngine, RE, bluesky plans, DAQ, presets, xxxpython, hutch session, motor groups, device loading."
+      }
     },
     {
       "name": "xpm-seq",
       "repo": "carbonscott/skill-xpm-seq",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/xpm-seq",
+        "name": "xpm-seq",
+        "kind": "skill",
+        "slug": "xpm-seq",
+        "description_auto": "Assist with LCLS-II XPM timing sequence programming. Use when: creating timing sequences, calculating beam rates or bucket periods, generating sequence scripts, validating sequences, programming XPM engines, working with event codes, or deploying via seqprogram.py. Trigger on: XPM, timing sequence, rate calculation, bucket period, sub-harmonic, event code, sequence engine, xpm-seq, seqprogram, LCLS-II triggers, beam rate.",
+        "description_menu": "Assist with LCLS-II XPM timing sequence programming. Use when: creating timing sequences, calculating beam rates or bucket periods, generating sequence scripts, validating sequences, programming XPM engines, working with event codes, or deploying via seqprogram.py. Trigger on: XPM, timing sequence, rate calculation, bucket period, sub-harmonic, event code, sequence engine, xpm-seq, seqprogram, LCLS-II triggers, beam rate."
+      }
     },
     {
       "name": "confluence-search",
       "repo": "carbonscott/slac-confluence-search",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/confluence-search",
+        "name": "confluence-search",
+        "kind": "skill",
+        "slug": "confluence-search",
+        "description_auto": "Search SLAC Confluence live using CQL (Confluence Query Language) via the REST search API. Covers every space your account can see (~200 spaces, tens of thousands of pages), not just the exported PSDM subset. Use for questions about LCLS docs, psana, AMI, smalldata_tools, detectors, DAQ, experiment procedures, meeting notes, or any SLAC wiki content; also for \"who wrote/changed X\", \"what changed recently\", \"find the page about X\".",
+        "description_menu": "Search SLAC Confluence live using CQL (Confluence Query Language) via the REST search API. Covers every space your account can see (~200 spaces, tens of thousands of pages), not just the exported PSDM subset. Use for questions about LCLS docs, psana, AMI, smalldata_tools, detectors, DAQ, experiment procedures, meeting notes, or any SLAC wiki content; also for \"who wrote/changed X\", \"what changed recently\", \"find the page about X\"."
+      }
     },
     {
       "name": "elog-search",
       "repo": "carbonscott/slac-elog-search",
       "ref": "main",
       "cron": null,
-      "central_data": null
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/elog-search",
+        "name": "elog-search",
+        "kind": "skill",
+        "slug": "elog-search",
+        "description_auto": "Search the LCLS eLog (pswww logbook) across experiments, read-only, using the invoking user's own S3DF token. Use when asked what the elog / logbook says about a topic, error, sample, detector or shift, or to find eLog entries by text, tag, run or date. Always reports which experiments it searched and why.",
+        "description_menu": "Search the LCLS eLog (pswww logbook) across experiments, read-only, using the invoking user's own S3DF token. Use when asked what the elog / logbook says about a topic, error, sample, detector or shift, or to find eLog entries by text, tag, run or date. Always reports which experiments it searched and why."
+      }
     }
   ]
 }
