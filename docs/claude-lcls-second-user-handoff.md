@@ -28,13 +28,13 @@ Running it as you is the only thing that really tests two claims:
    ACL entry: `group:ps-users:--x`. Execute without read means *traverse but do
    not list* — that, and only that, is what the ACL gives you. The key file
    itself is a different object: owner `cwang31`, but group-owned by
-   **`ps-users`**, mode `640`, and its own ACL names nobody. Your read comes
-   from plain group ownership there (`group::r-x` capped by `mask::r--`, so
-   effectively `r--`). So a `ps-users` member is expected to be able to read the
-   key **by its exact full path** — traversal from the directory's ACL, read
-   from the file's group — while being unable to `ls` the directory that
-   contains it. That asymmetry has never been observed from the outside;
-   `cwang31` is in `ps-data` and can do both.
+   **`ps-users`**, mode `640`, and its own ACL names no group beyond the owning
+   one. Your read comes from plain group ownership there (`group::r-x` capped
+   by `mask::r--`, so effectively `r--`). So a `ps-users` member is expected to
+   be able to read the key **by its exact full path** — traversal from the
+   directory's ACL, read from the file's group — while being unable to `ls` the
+   directory that contains it. That asymmetry has never been observed from the
+   outside; `cwang31` is in `ps-data` and can do both.
 2. **The deployed skills tree is group-readable.**
    `/sdf/group/lcls/ds/dm/apps/dev/claude/skills` is owned by `cwang31`, group
    `ps-users`, mode `2750` — so `ps-users` should get read+traverse on the tree
@@ -353,18 +353,17 @@ The repo is **public**: `https://github.com/carbonscott/deploy-opencode`. An
 anonymous HTTPS clone was tested from `sdfiana025` and succeeded:
 
 ```bash
-git clone --depth 1 --branch claude-lcls-wiring \
-  https://github.com/carbonscott/deploy-opencode.git /tmp/ldr-h2-clone
-ls -l /tmp/ldr-h2-clone/claude/install-claude-lcls.sh
+git clone --depth 1 https://github.com/carbonscott/deploy-opencode.git /tmp/claude-lcls-clone
+ls -l /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
 ```
 
 Observed:
 
 ```
 clone rc=0
--rwxr-xr-x 1 cwang31 gu 20087 Aug 27 13:59 /tmp/ldr-h2-clone/claude/install-claude-lcls.sh
-496
-6cb70eec3581ad6a8da4cd9f33023b7a  /tmp/ldr-h2-clone/claude/install-claude-lcls.sh
+-rwxr-xr-x 1 <you> <grp> 29467 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+693
+51440d603fd6353fc5d0212b05e653a6  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
 ```
 
 That the repo is genuinely public was re-checked two ways: `curl -s -o /dev/null
@@ -373,30 +372,23 @@ returns `200` and the JSON says `"private": false`; and `GIT_TERMINAL_PROMPT=0
 git -c credential.helper= ls-remote https://github.com/carbonscott/deploy-opencode.git`
 lists every ref without prompting for a credential.
 
-**Important caveat, stated plainly.** As of 2026-08-27 the version on GitHub is
-**not** the version this document describes. Branch `claude-lcls-wiring` is at
-commit `1f2db55c7ac1321c04ea4cecf520467acb4ecd70` and carries the **496-line**
-installer, md5 `6cb70eec3581ad6a8da4cd9f33023b7a`. The fixes for the
-unwritable-rc, symlinked-rc and blank-line-accumulation cases described in
-section 8 are in `cwang31`'s working tree only — a **603-line** file, md5
-`a8ca2089c3ee6f0b879c8ca67a665015`, uncommitted and unpushed.
+The fixes for the unwritable-rc, symlinked-rc and blank-line-accumulation cases
+described in section 8, plus a second round of corrections to the rc-refusal
+paths, are on `main` as of merge commit
+`b80ed6d8283668570a0aaa7cd50e82dbb1c59480` (PR #20). A plain clone of the
+default branch gives you the right file. The branch `claude-lcls-wiring` the
+work was developed on has been deleted, so do not ask for it by name.
 
-So, concretely: **until `cwang31` commits and pushes that change, the only way
-to get the installer this document was written against is a copy handed to you
-directly by `cwang31`.** That caveat is time-limited and self-checking — the
-moment the 603-line version reaches a pushed branch, Route C gives you the right
-file and nothing else here changes. Either way, verify what you have before
-running it:
+Verify what you have before running it:
 
 ```bash
-wc -l install-claude-lcls.sh   # expect 603
-md5sum install-claude-lcls.sh  # expect a8ca2089c3ee6f0b879c8ca67a665015
+wc -l install-claude-lcls.sh   # expect 693
+md5sum install-claude-lcls.sh  # expect 51440d603fd6353fc5d0212b05e653a6
 bash -n install-claude-lcls.sh # expect complete silence
 ```
 
-If you get 496 / `6cb70eec...` instead, you have the pre-fix installer. It will
-still install correctly in the normal case; it just behaves badly in the two
-edge cases in section 8, and you should say which one you ran.
+If you get 496 / `6cb70eec...` or 603 / `a8ca2089...` instead, you have a
+pre-merge installer. Re-clone from `main`.
 
 ---
 
@@ -417,30 +409,30 @@ bash /path/to/install-claude-lcls.sh --dry-run
 ### Expected output
 
 The following is **real captured output**, not a mock-up. It was produced on
-2026-08-27 on `sdfiana025` by `cwang31`, running the patched 603-line installer
-(md5 `a8ca2089c3ee6f0b879c8ca67a665015`) against a **scratch `HOME` of
-`/tmp/ldr-h3-home`** with the real `2.1.235` Claude Code binary symlinked onto a
-scratch `PATH` — so the `Verification` step is a genuine live completion through
-the gateway, not a stub. Your paths will show your own `$HOME` and your own
-binary instead of `/tmp/ldr-h3-home` and `/tmp/ldr-h3-bin/claude`. Everything
-else should match line for line.
+2026-08-27 on `sdfiana025` by `cwang31`, running the 693-line installer on
+`main` (md5 `51440d603fd6353fc5d0212b05e653a6`) against a **scratch `HOME` of
+`/tmp/ldr-gt/s1b/home`** with the real `2.1.235` Claude Code binary symlinked
+onto a scratch `PATH` — so the `Verification` step is a genuine live completion
+through the gateway, not a stub. Your paths will show your own `$HOME` and your
+own binary instead of `/tmp/ldr-gt/s1b/home` and `/tmp/ldr-gt/s1b/bin/claude`.
+Everything else should match line for line.
 
 ```
 
 ── Preflight
-  ✓ claude found: /tmp/ldr-h3-bin/claude (2.1.235 (Claude Code))
+  ✓ claude found: /tmp/ldr-gt/s1b/bin/claude (2.1.235 (Claude Code))
   ✓ key readable: /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat
   ✓ gateway reachable: https://ai-api.slac.stanford.edu (HTTP 200)
 
-── Config dir: /tmp/ldr-h3-home/.claude-lcls
-  ✓ wrote /tmp/ldr-h3-home/.claude-lcls/settings.json (mode 600)
+── Config dir: /tmp/ldr-gt/s1b/home/.claude-lcls
+  ✓ wrote /tmp/ldr-gt/s1b/home/.claude-lcls/settings.json (mode 600)
   ✓ no key is stored — apiKeyHelper reads it from /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat at runtime
 
 ── Shared skills: /sdf/group/lcls/ds/dm/apps/dev/claude/skills
-  ✓ linked 17 shared skill(s) into /tmp/ldr-h3-home/.claude-lcls/skills
+  ✓ linked 17 shared skill(s) into /tmp/ldr-gt/s1b/home/.claude-lcls/skills
 
 ── Shell function: claude-lcls()
-  ✓ appended to /tmp/ldr-h3-home/.bashrc
+  ✓ appended to /tmp/ldr-gt/s1b/home/.bashrc
 
 ── Verification
   ✓ live completion succeeded through https://ai-api.slac.stanford.edu
@@ -683,8 +675,8 @@ anyway.
 bash /path/to/install-claude-lcls.sh --uninstall
 ```
 
-Expected output — captured from the scratch-HOME run, immediately after the
-install in section 4:
+Expected output — captured from a scratch-HOME run, immediately after a
+successful install:
 
 ```
 
@@ -711,6 +703,21 @@ Exit status `0`. Verified afterwards on the scratch home:
   17 skills — the uninstall removes links, and never follows one into the shared
   tree.
 
+`--uninstall` does not always exit `0`. If any rc file was skipped or left
+unwritable, it now exits **1** — after printing the `Config dir left in place: …`
+block — because an uninstall that left a block behind did not uninstall. In that
+case you also get, before the `Config dir` block:
+
+```
+  WARN: not writable, left untouched: <rc>
+  WARN: the claude-lcls block is STILL PRESENT in the file(s) above.
+  WARN: fix the permissions and re-run:  /path/to/install-claude-lcls.sh --uninstall
+```
+
+Note that the 17 skill symlinks are removed anyway, so an aborted uninstall
+leaves a half-removed state: the shell function is still defined in your rc, the
+team skills are gone. Fix the permissions and re-run to finish the job.
+
 The config directory `~/.claude-lcls` is deliberately left behind. It holds
 `settings.json`, and — once you have actually run `claude-lcls` even once — the
 `backups/`, `projects/` and `sessions/` directories Claude Code writes there for
@@ -722,23 +729,23 @@ new one.
 
 ## 8. Known-good vs known-bad
 
-Every row below was produced by actually running the patched installer on
-`sdfiana025` against a scratch `HOME` under `/tmp`, and the "what the script
-says" column is copied from that run. Two rows could not be produced honestly,
-because `cwang31` **is** in `ps-users` and **is** on the SLAC network: the
-"Not in `ps-users`" row was forced with `KEY_FILE=/tmp/no-such-key.dat` and the
-"Off the SLAC network" row with `BASE_URL=https://127.0.0.1:9`. Both reach the
-identical code path, so the message text and the exit status are real; only the
-cause was simulated.
+Every row below was produced by actually running the 693-line `main` installer
+(md5 `51440d603fd6353fc5d0212b05e653a6`) on `sdfiana025` against a scratch
+`HOME` under `/tmp`, and the "what the script says" column is copied from that
+run. Two rows could not be produced honestly, because `cwang31` **is** in
+`ps-users` and **is** on the SLAC network: the "Not in `ps-users`" row was
+forced with `KEY_FILE=/tmp/no-such-key.dat` and the "Off the SLAC network" row
+with `BASE_URL=https://127.0.0.1:9`. Both reach the identical code path, so the
+message text and the exit status are real; only the cause was simulated.
 
 | Situation | Exit | What the script says |
 |---|---|---|
 | **Everything fine** | `0` | Eight `✓` lines ending in `✓ live completion succeeded through https://ai-api.slac.stanford.edu`, then the `Done.` block. Nine if you already have a `~/.claude/settings.json`. |
 | **Not in `ps-users`** (key unreadable) | `1` | `✗ cannot read /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat`, then `This key is group-readable by 'ps-users'. You are in:` followed by your own `id -nG`, then `Ask for 'ps-users' membership. Do NOT ask anyone to copy the key to you — it is meant to be read in place.` Nothing is written. |
 | **Off the SLAC network / VPN** | `1` | `✗ cannot reach https://ai-api.slac.stanford.edu — are you on the SLAC network or VPN?` Preflight dies before any file is created. (A rotated or revoked key gives `✗ gateway rejected the key (HTTP 401). Key may be rotated or revoked.` instead.) |
-| **Unwritable rc file** (e.g. mode 444 `~/.bashrc`) | `1` | Preflight, config dir and all 17 skill links succeed first, then: `WARN: <rc> is not writable (mode 444, owner <you>).` / `WARN: left <rc> COMPLETELY untouched -- nothing stripped, nothing appended, no backup written.` / `WARN: fix it with: chmod u+w <rc>   (then re-run this script)` / `WARN: not writable, left untouched: <rc>` / `WARN: claude-lcls was NOT installed into the file(s) above.` / `✗ cannot install claude-lcls: no writable shell rc. Fix the permissions above and re-run.` The rc file is left byte-identical (verified by md5, mode still `444`). Re-run after `chmod u+w` and it completes — confirmed, exit `0` with exactly one marker pair. Under `DRY_RUN=1` the same five `WARN:` lines appear, then `WARN: a real run would stop here with exit 1.`, and the script continues to `Dry run complete. Nothing was written.` and exits `0`. |
-| **Symlinked rc file** (dotfiles / stow / chezmoi) | `0` | Nothing special — `✓ appended to ~/.bashrc` on the first run and `✓ refreshed in ~/.bashrc` on the second. The point is what does *not* happen: `~/.bashrc` stays a symlink, the block lands in the physical file behind it, and a second run leaves exactly one marker pair rather than replacing the link with a regular file. |
-| **Broken markers** (a `# >>> claude-lcls >>>` with no matching `# <<< claude-lcls <<<`) | `0` | `WARN: <rc> has an UNTERMINATED claude-lcls block ...` / `WARN: left <rc> COMPLETELY untouched ...` / `WARN: left untouched and still needing manual repair: <rc>`. Note the asymmetry: this case warns loudly but still **exits 0**, unlike the unwritable case. Read the warnings; a `0` here does not mean the function was installed. |
+| **Unwritable rc file** (e.g. mode 444 `~/.bashrc`) | `1` (`0` if another rc succeeded) | Preflight, config dir and all 17 skill links succeed first, then, in this order: `WARN: <rc> is not writable (mode 444, owner <you>).` / `WARN: fix it with: chmod u+w <rc>   (then re-run this script)` / `WARN: left <rc> COMPLETELY untouched -- nothing stripped, nothing appended, no backup written.` / `WARN: not writable, left untouched: <rc>` / `WARN: claude-lcls was NOT installed into the file(s) above; fix the permissions and re-run.` / `✗ claude-lcls could not be installed into ANY shell rc. Fix the file(s) above and re-run.` The rc file is left byte-identical (verified by md5, mode still `444`), and no `.claude-lcls-bak` is written. There is no `── Verification` section at all — the run dies before it. Re-run after `chmod u+w` and it completes — confirmed, exit `0` with exactly one marker pair. If you have two rc files and only one of them is unwritable, the writable one **is** installed: the same five `WARN:` lines appear for the bad file, then `WARN: claude-lcls WAS installed into at least one other rc; continuing.`, and the run proceeds to `── Verification` and exits `0`. The diagnosis is target-aware. For a symlinked rc it first prints `WARN: <rc> is a symlink to <target>; everything below refers to the target.` and everything after that names `<target>`, not `<rc>`. For a writable file sitting in a read-only **directory** it prints `WARN: <target> is writable, but its directory <dir> is not (mode 555, owner <you>).` / `WARN: refreshing an existing block renames a temp file into that directory, so it needs write permission on the DIRECTORY, not on the file.` / `WARN: fix it with: chmod u+w <dir>   (then re-run this script)` — the remedy names the directory, not the file. Under `DRY_RUN=1` the same five `WARN:` lines appear, then `WARN: a real run would stop here with exit 1: no usable shell rc.`, and the script continues into `── Verification`, prints `Dry run complete. Nothing was written.` and exits `0`. |
+| **Symlinked rc file** (dotfiles / stow / chezmoi) | `0` | Nothing special — `✓ appended to ~/.bashrc` on the first run and `✓ refreshed in ~/.bashrc` on the second. The point is what does *not* happen: `~/.bashrc` stays a symlink, the block lands in the physical file behind it, and a second run leaves exactly one marker pair rather than replacing the link with a regular file. A link that cannot be resolved is refused instead of followed: `WARN: <rc> is a symlink that cannot be resolved: a missing directory somewhere in the chain, or a symlink loop.` / `WARN: inspect it with:  ls -l <rc>   and   readlink -f <rc>`, and the file then takes the unwritable-rc verdict above — exit `1` unless another rc took the block. A broken chain and a symlink loop produce the identical pair of lines; the installer cannot and does not distinguish them. |
+| **Broken markers** (a `# >>> claude-lcls >>>` with no matching `# <<< claude-lcls <<<`) | `1` (`0` if another rc succeeded) | `WARN: <rc> has an UNTERMINATED claude-lcls block: a '# >>> claude-lcls >>>' line with no matching '# <<< claude-lcls <<<' (or a second '# >>> claude-lcls >>>' inside an open block).` / `WARN: left <rc> COMPLETELY untouched — nothing stripped, nothing appended, no backup written.` / `WARN: fix it by hand (delete the stray '# >>> claude-lcls >>>' line, or add the missing '# <<< claude-lcls <<<') so exactly one begin/end pair remains, then re-run.` / `WARN: left untouched and still needing manual repair: <rc>` / `WARN: claude-lcls was NOT installed into the file(s) above; repair the markers and re-run.` / `✗ claude-lcls could not be installed into ANY shell rc. Fix the file(s) above and re-run.` The rc is left byte-identical (md5 verified) and no `.claude-lcls-bak` is written. Broken markers share one verdict with the unwritable case: if no rc took the block the run exits `1`; if a different rc did take it, you get `WARN: claude-lcls WAS installed into at least one other rc; continuing.` and exit `0`. Read the warnings; a `0` there does not mean the function was installed in *this* file. |
 | **No `claude` binary at all** | `1` | `✗ no 'claude' on PATH and no versioned binary under <your $HOME>/.local/share/claude/versions. Install Claude Code first, then re-run.` — the path is printed expanded, not as the literal `$HOME`. Nothing is written; not even the config dir. |
 | **No `claude` on PATH, versioned binary present** | `0` | Three `WARN:` lines about the missing launcher shim, naming the versioned binary it will use, then a normal successful install. |
 
