@@ -37,6 +37,19 @@ warn() { echo "  WARN: $*" >&2; }
 die()  { echo "  ✗ $*" >&2; exit 1; }
 step() { echo; echo "── $*"; }
 
+# stdout = $1 with only COMPLETE marker blocks removed. An UNTERMINATED block
+# (begin marker, no end marker) is held back and re-emitted verbatim, so a
+# hand-edited or half-written rc never loses everything below the marker.
+strip_block() {
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
+    $0 == b && !inblk { inblk = 1; hold = $0 ORS; next }
+    inblk && $0 == e  { inblk = 0; hold = "";      next }
+    inblk             { hold = hold $0 ORS;        next }
+                      { print }
+    END               { if (inblk) printf "%s", hold }
+  ' "$1"
+}
+
 MODE=install
 for arg in "$@"; do
   case "$arg" in
@@ -46,6 +59,14 @@ for arg in "$@"; do
     *)           die "unknown argument: $arg (try --help)" ;;
   esac
 done
+
+# DRY_RUN is compared against 1 in a dozen places below, so normalise it ONCE
+# here — otherwise DRY_RUN=true would quietly perform a REAL install.
+case "$(printf '%s' "$DRY_RUN" | tr 'A-Z' 'a-z')" in
+  1|true|yes|y|on)     DRY_RUN=1 ;;
+  0|false|no|n|off|'') DRY_RUN=0 ;;
+  *)                   die "DRY_RUN must be 0 or 1 (got: $DRY_RUN)" ;;
+esac
 
 # ─── Which shell rc files to touch ────────────────────────────────────────
 rc_files() {
@@ -66,8 +87,12 @@ if [ "$MODE" = uninstall ]; then
       if [ "$DRY_RUN" = 1 ]; then
         echo "  (dry-run) would strip the $FUNC_NAME block from $rc"
       else
-        sed -i.claude-lcls-bak "/${MARK_BEGIN}/,/${MARK_END}/d" "$rc"
+        cp -p "$rc" "$rc.claude-lcls-bak"
+        strip_block "$rc" > "$rc.tmp.$$" && mv "$rc.tmp.$$" "$rc"
         ok "stripped from $rc (backup: $rc.claude-lcls-bak)"
+        if grep -qF "$MARK_BEGIN" "$rc"; then
+          warn "$rc has an UNTERMINATED $FUNC_NAME block (missing '$MARK_END'); left it alone — fix it by hand"
+        fi
       fi
     else
       ok "nothing to strip in $rc"
@@ -116,10 +141,27 @@ fi
 # ─── Preflight ────────────────────────────────────────────────────────────
 step "Preflight"
 
-command -v claude >/dev/null 2>&1 \
-  || die "no 'claude' on PATH. Install Claude Code first, then re-run."
+if ! command -v claude >/dev/null 2>&1; then
+  if [ -n "$(ls -A "$HOME/.local/share/claude/versions" 2>/dev/null)" ]; then
+    echo "  ✗ no 'claude' on PATH — but Claude Code IS installed here." >&2
+    echo >&2
+    echo "    Versioned binaries are present under" >&2
+    echo "      $HOME/.local/share/claude/versions/" >&2
+    echo "    What is missing is the launcher shim ~/.local/bin/claude that" >&2
+    echo "    resolves them. The launcher reads \$HOME to find its versioned" >&2
+    echo "    binary, so do NOT work around this by overriding HOME — restore" >&2
+    echo "    the shim itself (a symlink to one of those versioned binaries, or" >&2
+    echo "    the small resolver script), make sure ~/.local/bin is on PATH," >&2
+    echo "    and re-run." >&2
+    exit 1
+  fi
+  die "no 'claude' on PATH. Install Claude Code first, then re-run."
+fi
 CLAUDE_BIN="$(command -v claude)"
-CLAUDE_VER="$("$CLAUDE_BIN" --version 2>/dev/null | head -1 || echo 'unknown')"
+# A binary that exists and is executable but cannot RUN is a preflight failure,
+# not a green checkmark with version "unknown".
+CLAUDE_VER="$("$CLAUDE_BIN" --version 2>&1 | head -1)" \
+  || die "'$CLAUDE_BIN' exists but failed to run: $CLAUDE_VER"
 ok "claude found: $CLAUDE_BIN ($CLAUDE_VER)"
 
 [ -r "$KEY_FILE" ] || {
@@ -135,9 +177,12 @@ ok "claude found: $CLAUDE_BIN ($CLAUDE_VER)"
 ok "key readable: $KEY_FILE"
 
 # Reachability. Gateway answers only on the SLAC network or VPN.
+# The fallback MUST live outside the command substitution: curl writes 000 to
+# stdout AND exits non-zero, so `|| echo 000` inside would concatenate to
+# 000000 and this whole case would fall through to the catch-all.
 HTTP_CODE="$(curl -s -o /dev/null -m 15 -w '%{http_code}' \
              -H "x-api-key: $(cat "$KEY_FILE")" \
-             "$BASE_URL/v1/models" 2>/dev/null || echo 000)"
+             "$BASE_URL/v1/models" 2>/dev/null)" || HTTP_CODE=000
 case "$HTTP_CODE" in
   200) ok "gateway reachable: $BASE_URL (HTTP 200)" ;;
   000) die "cannot reach $BASE_URL — are you on the SLAC network or VPN?" ;;
@@ -215,11 +260,44 @@ else
     mkdir -p "$SKILLS_DIR"
   fi
 
+  # Prune first: a skill retired from the shared tree must not leave a dangling
+  # link behind forever. Only links that NO LONGER RESOLVE are removed, so this
+  # can never follow a live link into the shared tree.
+  pruned=0
+  if [ -d "$SKILLS_DIR" ] && [ ! -L "$SKILLS_DIR" ]; then
+    for old in "$SKILLS_DIR"/*; do
+      [ -L "$old" ] || continue
+      [ -e "$old" ] && continue          # target still resolves — keep
+      pruned=$((pruned + 1))
+      if [ "$DRY_RUN" = 1 ]; then
+        echo "  (dry-run) would remove stale link $old"
+      else
+        rm -f "$old"
+      fi
+    done
+  fi
+  if [ "$pruned" -ne 0 ] && [ "$DRY_RUN" != 1 ]; then
+    ok "pruned $pruned stale skill link(s) from $SKILLS_DIR"
+  fi
+
   linked=0
   for src in "$SKILLS_SRC"/*; do
-    [ -e "$src" ] || continue
-    linked=$((linked + 1))
+    if [ ! -e "$src" ]; then
+      # A dangling symlink in the shared tree is how a skill gets retired by
+      # mistake. Say so instead of dropping it on the floor.
+      if [ -L "$src" ]; then
+        warn "dangling entry in shared tree, not linked: $src"
+      fi
+      continue
+    fi
     name="$(basename "$src")"
+    # A REAL directory here would make `ln -sfn` create the link INSIDE it,
+    # giving skills/$name/$name. Refuse rather than nest one level too deep.
+    if [ -d "$SKILLS_DIR/$name" ] && [ ! -L "$SKILLS_DIR/$name" ]; then
+      warn "$SKILLS_DIR/$name is a real directory, not a link — leaving it alone"
+      continue
+    fi
+    linked=$((linked + 1))
     # One symlink per ENTRY. Never link or mkdir $SKILLS_SRC itself.
     if [ "$DRY_RUN" = 1 ]; then
       echo "  (dry-run) would link $SKILLS_DIR/$name -> $src"
@@ -255,7 +333,11 @@ while IFS= read -r rc; do
     if [ "$DRY_RUN" = 1 ]; then
       echo "  (dry-run) would refresh the existing block in $rc"
     else
-      sed -i.claude-lcls-bak "/${MARK_BEGIN}/,/${MARK_END}/d" "$rc"
+      cp -p "$rc" "$rc.claude-lcls-bak"
+      strip_block "$rc" > "$rc.tmp.$$" && mv "$rc.tmp.$$" "$rc"
+      if grep -qF "$MARK_BEGIN" "$rc"; then
+        warn "$rc has an UNTERMINATED $FUNC_NAME block (missing '$MARK_END'); left it alone — fix it by hand"
+      fi
       printf '\n%s\n' "$SNIPPET" >> "$rc"
       ok "refreshed in $rc"
     fi
