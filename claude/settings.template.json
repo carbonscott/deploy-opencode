@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "// _1_": "SLAC AI Gateway config for Claude Code. See docs/claude-code-lcls-setup.md.",
+  "// _2_": "Pick ONE auth method: apiKeyHelper (recommended, key stays in the key file)",
+  "// _3_": "or env.ANTHROPIC_AUTH_TOKEN (paste). Delete the one you do not use.",
+  "// _4_": "Never commit a real key. Model ids verified against the gateway 2026-08-26.",
+
+  "apiKeyHelper": "cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat",
+
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://ai-api.slac.stanford.edu",
+
+    "// ANTHROPIC_AUTH_TOKEN": "PASTE-YOUR-SLAC-API-KEY-HERE (only if you delete apiKeyHelper above)",
+
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+
+  "skipWebFetchPreflight": true,
+
+  "attribution": {
+    "commit": "Generated with AI\n\nCo-Authored-By: SLAC AI",
+    "pr": ""
+  }
+}
