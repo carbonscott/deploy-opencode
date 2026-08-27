@@ -206,23 +206,26 @@ fi
 # ─── Preflight ────────────────────────────────────────────────────────────
 step "Preflight"
 
-if ! command -v claude >/dev/null 2>&1; then
-  if [ -n "$(ls -A "$HOME/.local/share/claude/versions" 2>/dev/null)" ]; then
-    echo "  ✗ no 'claude' on PATH — but Claude Code IS installed here." >&2
-    echo >&2
-    echo "    Versioned binaries are present under" >&2
-    echo "      $HOME/.local/share/claude/versions/" >&2
-    echo "    What is missing is the launcher shim ~/.local/bin/claude that" >&2
-    echo "    resolves them. The launcher reads \$HOME to find its versioned" >&2
-    echo "    binary, so do NOT work around this by overriding HOME — restore" >&2
-    echo "    the shim itself (a symlink to one of those versioned binaries, or" >&2
-    echo "    the small resolver script), make sure ~/.local/bin is on PATH," >&2
-    echo "    and re-run." >&2
-    exit 1
+# Resolve a usable claude binary.
+#
+# The launcher shim ~/.local/bin/claude comes and goes on shared hosts -- it has
+# been observed created and deleted mid-session by another actor -- and a missing
+# shim must not stop the install. Fall back to the newest versioned binary.
+#
+# Do NOT "fix" a missing shim by overriding HOME: the shim resolves its own
+# version directory from $HOME, so overriding it yields "No claude binary found".
+VERSIONS_DIR="${VERSIONS_DIR:-$HOME/.local/share/claude/versions}"
+CLAUDE_BIN="$(command -v claude 2>/dev/null)" || CLAUDE_BIN=""
+if [ -z "$CLAUDE_BIN" ]; then
+  CLAUDE_BIN="$(ls -d "$VERSIONS_DIR"/* 2>/dev/null | sort -V | tail -1)" || CLAUDE_BIN=""
+  if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
+    warn "no 'claude' on PATH -- the launcher shim ~/.local/bin/claude is missing"
+    warn "using the newest versioned binary instead: $CLAUDE_BIN"
+    warn "restore the shim, and keep ~/.local/bin on PATH, so a plain 'claude' works too"
+  else
+    die "no 'claude' on PATH and no versioned binary under $VERSIONS_DIR. Install Claude Code first, then re-run."
   fi
-  die "no 'claude' on PATH. Install Claude Code first, then re-run."
 fi
-CLAUDE_BIN="$(command -v claude)"
 # A binary that exists and is executable but cannot RUN is a preflight failure,
 # not a green checkmark with version "unknown".
 CLAUDE_VER="$("$CLAUDE_BIN" --version 2>&1 | head -1)" \
@@ -387,8 +390,19 @@ read -r -d '' SNIPPET <<EOF || true
 $MARK_BEGIN
 # Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
 # Your plain \`claude\` is untouched and keeps using ~/.claude/.
+# The shim can vanish, so resolve a binary at call time rather than assuming a
+# plain "claude" is on PATH.
 $FUNC_NAME() {
-    CLAUDE_CONFIG_DIR="$LCLS_DIR" command claude "\$@"
+    local _bin
+    _bin="\$(command -v claude 2>/dev/null)" || _bin=""
+    if [ -z "\$_bin" ]; then
+        _bin="\$(ls -d "\$HOME"/.local/share/claude/versions/* 2>/dev/null | sort -V | tail -1)" || _bin=""
+    fi
+    if [ -z "\$_bin" ] || [ ! -x "\$_bin" ]; then
+        echo "$FUNC_NAME: no claude binary on PATH or under \$HOME/.local/share/claude/versions" >&2
+        return 127
+    fi
+    CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
 }
 $MARK_END
 EOF
@@ -440,7 +454,7 @@ fi
 # exercises apiKeyHelper, the gateway, the model aliases, AND whether a separate
 # CLAUDE_CONFIG_DIR coexists with whatever auth state ~/.claude.json holds.
 set +e
-VERIFY_OUT="$(CLAUDE_CONFIG_DIR="$LCLS_DIR" command claude -p \
+VERIFY_OUT="$(CLAUDE_CONFIG_DIR="$LCLS_DIR" "$CLAUDE_BIN" -p \
               'Reply with exactly: PONG' --model sonnet 2>&1)"
 VERIFY_RC=$?
 set -e

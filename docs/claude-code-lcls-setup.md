@@ -282,11 +282,19 @@ repo** (a cwd inside the repo lets `CLAUDE.md` leak context into the answer and
 invalidates the check):
 
 ```bash
-cd /tmp && CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" claude --print \
+cd /tmp && claude-lcls -p \
   "List the exact names of every Skill available to you, one per line, nothing else."
 ```
 
 The team skill names should appear alongside Claude Code's bundled ones.
+
+Use `claude-lcls` here, not a bare `claude`. The function sets
+`CLAUDE_CONFIG_DIR` for you and resolves its own binary: when the launcher shim
+`~/.local/bin/claude` is missing — it is known to come and go on shared hosts —
+the function falls back to the newest binary under
+`~/.local/share/claude/versions/`, where a bare `claude` would fail with
+`command not found`. `install-claude-lcls.sh` applies the same fallback in its
+preflight and in its own verification step.
 
 The group ownership the shared target carries is settled in
 [`deploy-permissions.md`](deploy-permissions.md).
