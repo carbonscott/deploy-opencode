@@ -33,6 +33,25 @@
 # handoff/skill-externalize-guide.md for layout and conventions.
 # Cron entries are NOT auto-installed — install them manually on sdfcron001
 # per the `cron:` block in the manifest.
+#
+# REF FORMS. A manifest entry's `ref` may be a BRANCH, a TAG, or a full
+# 40-character lowercase hex commit SHA. Branch and tag refs take the original
+# `git clone --depth=1 -b <ref>` path, unchanged. A SHA ref cannot: `clone -b`
+# answers "Remote branch <sha> not found in upstream origin". It is instead
+# fetched shallowly into a fresh repo (`git fetch --depth=1 origin <sha>`,
+# served by GitHub's uploadpack.allowAnySHA1InWant — verified on this host
+# against a non-tip commit) and checked out detached. Abbreviated SHAs are NOT
+# supported; see is_sha_ref() for why. Pinning a ref to a SHA is how an entry
+# is frozen to exactly the content that is already deployed live.
+#
+# CRON ps-data GUARD. Any entry with a non-null `cron` block has the cron
+# script named by cron.script scanned BEFORE a single byte is written for that
+# skill. A script that chgrps its data dir to ps-data when the live deployed
+# copy reads ps-users is refused outright (DEPLOY_FAILED=1, nothing written),
+# because deploying it would cut those corpora from 3748 ps-users readers to 61
+# ps-data readers at the next cron tick. See assert_cron_group_safe(). There is
+# deliberately NO environment override: a human must not be able to wave it
+# through.
 
 set -euo pipefail
 
@@ -101,7 +120,7 @@ trap 'rm -rf "$META_DIR"' EXIT INT TERM
 
 # ─── Manifest parse via jq ────────────────────────────────────────────────
 # Emits one TSV row per skill:
-#   name<TAB>repo<TAB>ref<TAB>has_cron(0|1)<TAB>has_harness(0|1)
+#   name<TAB>repo<TAB>ref<TAB>has_cron(0|1)<TAB>has_harness(0|1)<TAB>cron_script
 # has_harness is the NEW column (iteration 5) and is the single-source-vs-legacy
 # discriminator, replacing the old "is there a skill.json on disk" test. A JSON
 # object cannot ride through @tsv, so only the boolean travels here; the block
@@ -114,11 +133,18 @@ trap 'rm -rf "$META_DIR"' EXIT INT TERM
 # quietly down the legacy branch — the exact "typo'd key silently reverts to
 # legacy" hole this design closes. Only a FULLY ABSENT key means legacy.
 # `has` on a non-object input would error, but .skills[] elements are objects.
+#
+# cron_script is the NEW column (iteration 4 of this campaign). It carries
+# .cron.script — the repo-relative path of the cron script — or the empty
+# string when .cron is null, which is what assert_cron_group_safe() keys off.
+# The pre-existing has_cron boolean is left exactly where it is rather than
+# repurposed, so nothing that already reads column 4 changes meaning.
 parse_manifest() {
   jq -r '.skills[]
          | [ .name, .repo, (.ref // "main"),
              (if .cron then 1 else 0 end),
-             (if has("harness") then 1 else 0 end) ]
+             (if has("harness") then 1 else 0 end),
+             (.cron.script // "") ]
          | @tsv' "$MANIFEST"
 }
 
@@ -327,28 +353,242 @@ resolve_harness_source() {
   echo "$dir"
 }
 
+# ─── Ref shape ────────────────────────────────────────────────────────────
+# is_sha_ref <ref> -> 0 when <ref> is a FULL 40-character lowercase hex commit
+# SHA, 1 otherwise (branch, tag, anything else).
+#
+# FULL LENGTH ONLY, on purpose, for two independent reasons:
+#   1. An abbreviated SHA is indistinguishable from a legitimate ref name — a
+#      branch or tag literally called "deadbeef" or "0123456" is legal git — so
+#      treating short hex as a SHA would silently misroute real branches.
+#   2. The server rejects it anyway. Verified on this host against GitHub:
+#        git fetch --depth=1 origin 524de15
+#        fatal: couldn't find remote ref 524de15
+#      A protocol "want" line must carry a full object name; only the 40-char
+#      form works.
+# So an abbreviated SHA falls through to the branch path and fails loudly
+# there, which is the right outcome: the fix is to pin the manifest to all 40
+# characters. Uppercase hex is likewise treated as a ref name; git SHAs are
+# canonically lowercase and the manifest is machine-written.
+is_sha_ref() {
+  case "$1" in
+    *[!0-9a-f]*) return 1 ;;
+    ????????????????????????????????????????) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# ─── Cron ps-data guard ───────────────────────────────────────────────────
+# Five upstream repos (skill-ask-{epics,nersc,s3df,tiled,olcf}) ship a cron
+# script whose corpus-publishing step reads
+#     chgrp -R ps-data "$<X>_DOCS_DATA_DIR"
+# while the LIVE deployed copy of that same script reads ps-users. The two
+# groups are NOT nested: ps-users is gid 10000 with 3748 members, ps-data is
+# gid 2279 with 61, and 3689 ps-users members are in neither. A bare deploy
+# would overwrite the live script with the upstream one and the next cron tick
+# — sdf-docs runs hourly, so under an hour — would chgrp the corpora down to 61
+# readers. That is a silent availability regression, not a crash, so nothing
+# downstream would catch it.
+#
+# The guard is MANIFEST-DRIVEN: it applies to every entry whose `cron` block is
+# non-null and inspects exactly the script that block names. The 12 entries
+# with cron: null are never inspected and behave precisely as they did before.
+# That matters for correctness as well as scope — data/elog-copilot and the
+# three elog tools directories are LEGITIMATELY ps-data and must stay that way,
+# and elog-search has cron: null, so no path in this guard can ever look at
+# them.
+#
+# There is NO escape hatch. No ALLOW_PS_DATA_CRON, no --force. The entire value
+# of the check is that a human under deploy pressure cannot forget it, and an
+# override flag is the thing that gets typed at exactly that moment.
+#
+# assert_cron_group_safe <name> <stage> <cron_script_relpath>
+#   0 = safe, deploy may proceed.
+#   1 = refuse this skill (caller sets DEPLOY_FAILED=1 and returns having
+#       written nothing).
+assert_cron_group_safe() {
+  local name="$1"
+  local stage="$2"
+  local rel="$3"
+  local f="$stage/$rel"
+
+  # Same containment rules resolve_harness_source() applies: a manifest is an
+  # input, and an absolute or ..-escaping cron.script would point the scan
+  # outside the clone — at, for instance, the already-correct live copy.
+  case "$rel" in
+    /*)  echo "  ERROR: manifest entry '$name': cron.script must be repo-relative, got '$rel'" >&2
+         return 1 ;;
+    ..|../*|*/../*|*/..)
+         echo "  ERROR: manifest entry '$name': cron.script must not contain '..', got '$rel'" >&2
+         return 1 ;;
+  esac
+
+  # A missing cron script is an ERROR, not a warning. Two reasons: the manifest
+  # and the repo disagree, which is a real defect either way; and more to the
+  # point the guard cannot prove this skill is safe, and the whole design of
+  # this check is fail-closed. Downgrading it to a warning would mean a single
+  # upstream rename — moving the script to a path the manifest no longer names
+  # — quietly disables the ps-data check for that skill while the tools/ rsync
+  # still ships whatever script is actually in the repo.
+  if [ ! -f "$f" ]; then
+    echo "  ERROR: manifest entry '$name' declares cron.script '$rel', but the clone" >&2
+    echo "         has no such file. Cannot verify the ps-data guard, so this skill" >&2
+    echo "         is NOT deployed (fail-closed)." >&2
+    echo "         expected: $f" >&2
+    echo "         Fix: correct cron.script in $MANIFEST, or restore the script." >&2
+    return 1
+  fi
+
+  # PATTERN. Match a chgrp COMMAND whose GROUP OPERAND is the literal ps-data:
+  #   (^|[;&|(]|space)  the chgrp must start a command, so it is not matched
+  #                     inside a longer word or a path such as .../my-chgrp-log
+  #   chgrp
+  #   ([[:space:]]+-...)*  any number of option words: -R, --recursive,
+  #                     --reference=..., -h, and so on
+  #   [[:space:]]+['"]?ps-data['"]?([[:space:]]|$)
+  #                     the group operand, bare or quoted either way
+  #
+  # Neither too narrow nor too broad: it is broader than the literal known-bad
+  # 'chgrp -R ps-data' because the option list and the quoting are free (an
+  # upstream edit to `chgrp --recursive "ps-data"` would still be caught), and
+  # it is narrower than a bare `grep ps-data` because the trailing delimiter
+  # stops it matching ps-database, the command-start anchor stops it matching a
+  # word or filename containing chgrp, and requiring ps-data in the group-
+  # operand position means a comment, a log message, a variable named ps_data
+  # or an unrelated mention of the group does not trip it.
+  local ps_data_re
+  ps_data_re="(^|[;&|(]|[[:space:]])chgrp([[:space:]]+-[^[:space:]]+)*[[:space:]]+['\"]?ps-data['\"]?([[:space:]]|\$)"
+  # A chgrp whose group operand is an expansion — $G, ${G}, `...`, $(...) —
+  # cannot be resolved by reading the file, so it is reported separately rather
+  # than being silently treated as safe.
+  local var_re
+  var_re="(^|[;&|(]|[[:space:]])chgrp([[:space:]]+-[^[:space:]]+)*[[:space:]]+['\"]?[\$\`]"
+
+  # Whole-line shell comments are stripped before matching: a commented-out
+  # `# chgrp -R ps-data ...` is inert, and refusing a deploy over documentation
+  # is the kind of false positive that gets a guard disabled. The grep -v runs
+  # on grep -n output, so the reported line numbers stay the file's own.
+  local nocomment='^[0-9]+:[[:space:]]*#'
+
+  local hits
+  if hits="$(grep -nE "$ps_data_re" "$f" | grep -vE "$nocomment")"; then
+    local deployed=""
+    case "$rel" in
+      tools/*) deployed="$TOOLS_DST/${rel#tools/}" ;;
+    esac
+    echo "  ERROR: DEPLOY REFUSED — cron script would regress the corpus group." >&2
+    echo "         skill:  $name" >&2
+    echo "         file:   $f" >&2
+    echo "         (repo-relative: $rel)" >&2
+    echo "         It chgrps to ps-data (gid 2279, 61 members) at:" >&2
+    printf '%s\n' "$hits" | sed 's/^/           /' >&2
+    if [ -n "$deployed" ] && [ -f "$deployed" ]; then
+      echo "         The LIVE deployed copy at" >&2
+      echo "           $deployed" >&2
+      echo "         reads:" >&2
+      grep -nE "(^|[;&|(]|[[:space:]])chgrp" "$deployed" | sed 's/^/           /' >&2 || true
+    else
+      echo "         The LIVE deployed copy reads ps-users (gid 10000, 3748 members)." >&2
+    fi
+    echo "         ps-users and ps-data are NOT nested: 3689 ps-users members are" >&2
+    echo "         not in ps-data. Deploying this and letting cron run would drop" >&2
+    echo "         those corpora from 3748 readers to 61. sdf-docs is hourly." >&2
+    echo "         REMEDY: push and merge branch 'fix/cron-chgrp-ps-users' in the" >&2
+    echo "         upstream repo for '$name' (staged at" >&2
+    echo "         /sdf/data/lcls/ds/prj/prjdat21/results/cwang31/iter6-cron-fix/)," >&2
+    echo "         then re-run this deploy. Do NOT cherry-pick the exec-bit fix" >&2
+    echo "         alone: it is stacked ON TOP of the chgrp fix on purpose, and" >&2
+    echo "         taking it by itself resurrects a dead cron that writes ps-data." >&2
+    echo "         There is no override flag, by design." >&2
+    echo "         Nothing was written for '$name'." >&2
+    return 1
+  fi
+
+  if hits="$(grep -nE "$var_re" "$f" | grep -vE "$nocomment")"; then
+    if grep -vE '^[[:space:]]*#' "$f" | grep -q 'ps-data'; then
+      echo "  ERROR: DEPLOY REFUSED — cron script chgrps to a group this guard cannot" >&2
+      echo "         resolve, and the string 'ps-data' appears in the same file." >&2
+      echo "         skill:  $name" >&2
+      echo "         file:   $f" >&2
+      printf '%s\n' "$hits" | sed 's/^/           /' >&2
+      echo "         The guard cannot prove the group is not ps-data, and fail-closed" >&2
+      echo "         is the rule. Make the group operand a literal, or remove the" >&2
+      echo "         ps-data reference. Nothing was written for '$name'." >&2
+      return 1
+    fi
+    echo "  WARN: $rel chgrps to a non-literal group; the ps-data guard could not" >&2
+    echo "        statically resolve it. 'ps-data' does not appear anywhere in the" >&2
+    echo "        file, so the deploy proceeds — but review it:" >&2
+    printf '%s\n' "$hits" | sed 's/^/          /' >&2
+  fi
+
+  return 0
+}
+
 # ─── Per-skill deploy ─────────────────────────────────────────────────────
 deploy_skill() {
   local name="$1"
   local repo="$2"
   local ref="$3"
   local has_harness="$4"
+  local cron_script="${5:-}"
   local stage="$STAGING_ROOT/$name"
 
   echo "── $name ($repo @ $ref)"
 
-  # Clone or update
+  # Clone or update. $ref may be a branch, a tag or a full 40-hex commit SHA.
+  # The branch/tag arms below are byte-for-byte what this script always did;
+  # SHA refs get their own arms because neither `clone -b <sha>` nor
+  # `origin/<sha>` exists.
   if [ -d "$stage/.git" ]; then
-    git -C "$stage" fetch --depth=1 origin "$ref"
-    git -C "$stage" checkout "$ref"
-    # Only reset when origin/$ref resolves (branches do; tags/SHAs under
-    # --depth=1 do not). Silent || true would swallow real fetch failures.
-    if git -C "$stage" rev-parse --verify "origin/$ref" >/dev/null 2>&1; then
-      git -C "$stage" reset --hard "origin/$ref"
+    if is_sha_ref "$ref"; then
+      # `git fetch --depth=1 origin <sha>` is served by GitHub
+      # (uploadpack.allowAnySHA1InWant); verified on this host against a
+      # non-tip commit, so it is not a tip-only special case. FETCH_HEAD is
+      # the fetched object. There is no origin/<sha> ref to reset --hard to —
+      # the forced detached checkout IS the reset, and it also recovers a
+      # stage left dirty or on a branch by an earlier run.
+      git -C "$stage" fetch --depth=1 origin "$ref"
+      git -C "$stage" checkout -q --force --detach FETCH_HEAD
+    else
+      git -C "$stage" fetch --depth=1 origin "$ref"
+      git -C "$stage" checkout "$ref"
+      # Only reset when origin/$ref resolves (branches do; tags/SHAs under
+      # --depth=1 do not). Silent || true would swallow real fetch failures.
+      if git -C "$stage" rev-parse --verify "origin/$ref" >/dev/null 2>&1; then
+        git -C "$stage" reset --hard "origin/$ref"
+      fi
     fi
   else
     rm -rf "$stage"
-    git clone --depth=1 -b "$ref" "git@github.com:$repo.git" "$stage"
+    if is_sha_ref "$ref"; then
+      # `git clone --depth=1 -b <sha>` fails with "Remote branch <sha> not
+      # found in upstream origin" — -b takes a ref name, and a SHA is not one.
+      # init + remote add + shallow fetch of the SHA is the equivalent, and
+      # keeps the single-commit shallow shape.
+      mkdir -p "$stage"
+      git -C "$stage" init -q
+      git -C "$stage" remote add origin "git@github.com:$repo.git"
+      git -C "$stage" fetch --depth=1 origin "$ref"
+      git -C "$stage" checkout -q --detach FETCH_HEAD
+    else
+      git clone --depth=1 -b "$ref" "git@github.com:$repo.git" "$stage"
+    fi
+  fi
+
+  # ─── Cron ps-data guard ─────────────────────────────────────────────────
+  # Placed HERE deliberately: after the clone (there is nothing to inspect
+  # before it) and before source selection, before write_harness_meta(),
+  # before render.sh, and before every rsync_and_chmod call — the skill rsync,
+  # the claude-tree rsync, the agents/ symlink and the tools/ rsync all come
+  # later in this function. A refused skill therefore writes NOTHING anywhere
+  # under $DEPLOY_ROOT, which is the requirement: the hazard is precisely the
+  # tools/ rsync overwriting the live cron script.
+  if [ -n "$cron_script" ]; then
+    if ! assert_cron_group_safe "$name" "$stage" "$cron_script"; then
+      DEPLOY_FAILED=1
+      return 0
+    fi
   fi
 
   # ─── Source selection: manifest harness block vs legacy checked-in tree ──
@@ -531,7 +771,7 @@ main() {
   local rows
   rows=$(parse_manifest)
 
-  while IFS=$'\t' read -r name repo ref has_cron has_harness; do
+  while IFS=$'\t' read -r name repo ref has_cron has_harness cron_script; do
     if [ ${#wanted[@]} -gt 0 ]; then
       local match=0
       for w in "${wanted[@]}"; do
@@ -540,7 +780,7 @@ main() {
       [ "$match" = "0" ] && continue
     fi
     matched+=("$name")
-    deploy_skill "$name" "$repo" "$ref" "$has_harness"
+    deploy_skill "$name" "$repo" "$ref" "$has_harness" "$cron_script"
   done <<< "$rows"
 
   # Warn if any requested skill name didn't match a manifest entry.
@@ -564,7 +804,8 @@ main() {
   echo "per the 'cron:' blocks in $MANIFEST."
 
   if [ "$DEPLOY_FAILED" != "0" ]; then
-    echo "ERROR: one or more repos matched no known layout; see above." >&2
+    echo "ERROR: one or more skills failed to deploy (unknown layout, malformed" >&2
+    echo "       harness block, or the cron ps-data guard); see above." >&2
     exit 3
   fi
 }

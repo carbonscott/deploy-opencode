@@ -1,7 +1,14 @@
 # Manifest-harness change — handoff
 
-**Status:** implemented, rehearsed in `/tmp`, **not committed, not pushed, not deployed.**
-**Branch:** `main` @ `860ac10`. **Date:** 2026-08-27.
+**Status:** implemented, rehearsed in `/tmp`, **committed on a topic branch, NOT pushed, NOT deployed.**
+**Branch:** `feat/manifest-harness-render` (two commits on top of `main` @ `860ac10`):
+`5e9a05e` the manifest-harness change itself, then a second commit carrying the three
+deployment-blocker fixes (cron guard, cuda-docs SHA pin, docs). `main` has not moved.
+**Date:** 2026-08-27.
+
+**If you read only one thing:** a bare `./deploy.sh` **no longer exits 0.** It deploys the
+12 cron-free skills and **hard-refuses** the five ps-data cron skills with exit code `3`.
+That is deliberate — see §6.
 **Full design + rationale:** `docs/design-manifest-harness.md` — start at its "AS BUILT" section.
 Read this before you run `./deploy.sh` against anything real.
 
@@ -21,10 +28,10 @@ emits exactly one regenerated block per target.
 | file | lines | state | change |
 |---|---|---|---|
 | `skills.manifest.json` | 280 | tracked, MODIFIED | 17/17 entries gained a `harness` block. `jq -S 'del(.skills[].harness)'` diffs **empty** vs `HEAD` — nothing else moved. |
-| `deploy.sh` | 572 | tracked, MODIFIED | `has_harness` TSV column; `write_harness_meta()` + cleanup trap; `resolve_harness_source()`; dry-run no longer mkdirs. |
-| `render.sh` | 429 | **untracked** | `--meta` flag; `skill.json` demoted to fallback; frontmatter stripping at all 4 call sites. |
-| `validate-manifest.sh` | 285 | **untracked** | new; validates the manifest. |
-| `docs/design-manifest-harness.md` | 1449 | **untracked** | the spec, corrected to match the code. |
+| `deploy.sh` | 813 | tracked | `has_harness` TSV column; `write_harness_meta()` + cleanup trap; `resolve_harness_source()`; dry-run no longer mkdirs. **Second commit adds** `assert_cron_group_safe()` (the ps-data guard, §6), `is_sha_ref()` + a SHA clone/update path (§9), and a 6th TSV column `cron_script`. 572 → 813 lines. |
+| `render.sh` | 429 | tracked | `--meta` flag; `skill.json` demoted to fallback; frontmatter stripping at all 4 call sites. Unchanged by the second commit. |
+| `validate-manifest.sh` | 285 | tracked | validates the manifest. Unchanged by the second commit; still exits `0` (17 pre-existing `description_menu > 120 chars` warnings). |
+| `docs/design-manifest-harness.md` | 1449+ | tracked | the spec. Its AS BUILT section carries the guard and SHA-ref detail. |
 
 **The one property that makes this safe to ship:** `description_menu` was seeded
 **verbatim** from `description_auto` for all 17, so the first deploy should be a
@@ -98,10 +105,13 @@ the live file already said.
 - [ ] `./validate-manifest.sh` exits `0`.
 - [ ] Rehearsal diff reviewed; every difference maps to §3 above. **No unexplained ones.**
 - [ ] **No description text changed** for any of the 17 (see §1).
-- [ ] Cron hazard handled — see §6. This is the one that can hurt 3687 people.
-- [ ] `git add` + commit the four files (a later agent does this; it has not happened yet).
-      Name every path explicitly. **Never `git add -A`** — the working tree holds unrelated
-      human work (`memory/`, `research-loop/`, apptainer + bedrock docs, `.bak` files, a 43 MB `.sif`).
+- [ ] Cron hazard handled — see §6. This is the one that can hurt 3687 people. It is now
+      enforced by a deploy-time guard, so the failure mode is a loud exit `3`, not a silent
+      revert. Do not treat that exit `3` as a bug to route around.
+- [x] Committed: `5e9a05e` (manifest-harness) + a second commit (blocker fixes + docs) on
+      `feat/manifest-harness-render`. Every path was named explicitly; **never `git add -A`** —
+      the working tree holds ~78 unrelated human changes (`memory/`, `research-loop/`,
+      apptainer + bedrock docs, `.bak` files, a 43 MB `.sif`, `migrate.sh`). Nothing pushed.
 - [ ] Decide `DEPLOY_CLAUDE`. It defaults to `1`, so the **first real deploy creates
       `$DEPLOY_ROOT/claude/`** via an `ensure_claude_root()` path only ever exercised against a
       fake root. A wrong group or stray `other::r-x` there is the 2026-02-12 incident.
@@ -110,30 +120,53 @@ the live file already said.
 ---
 ## 5. Recommended first live deploy
 
-Do not start with a bare `./deploy.sh`.
+**Revised for the cron guard.** A bare `./deploy.sh` now exits `3`: the five cron skills are
+refused before a single byte is written for them, the other 12 deploy normally. So there is no
+longer any way to *accidentally* revert the cron scripts — but there is also no bare-deploy
+green run until the five upstream repos are fixed.
 
 ```sh
+cd /sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode
+
+# 0. Validate. Must exit 0.
+./validate-manifest.sh ; echo "exit=$?"
+
 # 1. Dry run against the real root. Writes nothing.
 DRY_RUN=1 ./deploy.sh
 
-# 2. One low-traffic skill, opencode only, to prove the pipeline end to end.
+# 2. One skill, opencode only, to prove the pipeline end to end.
+#    cuda-docs is pinned (§9) so this is a provable no-op on bytes:
+#    the deployed SKILL.md must stay md5 ecf3dfbe1137e04c91bfa80d3f41a04e, 2541 bytes,
+#    and NO docs/ directory may appear.
 DEPLOY_CLAUDE=0 ./deploy.sh cuda-docs
-#    Then inspect the deployed SKILL.md by hand and actually invoke the skill.
+md5sum /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/cuda-docs/SKILL.md
+ls     /sdf/group/lcls/ds/dm/apps/dev/opencode/skills/cuda-docs/
+#    Then actually invoke the skill in a harness. Nobody has ever done this (§7.3).
 
-# 3. The 12 skills that are NOT cron-hazardous (see §6), still opencode-only.
-DEPLOY_CLAUDE=0 ./deploy.sh ask-ami askcode ask-lcls2 ask-slac-ai-tools \
-  ask-slurm-s3df ask-smalldata confluence-search docs-search elog-search \
-  experimental-hutch-python xpm-seq
+# 3. THE 12 DEPLOYABLE SKILLS — the exact command a human runs today.
+#    Naming them explicitly is what makes this exit 0 instead of 3.
+DEPLOY_CLAUDE=0 ./deploy.sh cuda-docs ask-ami ask-lcls2 ask-slac-ai-tools \
+  ask-slurm-s3df ask-smalldata askcode confluence-search docs-search \
+  elog-search experimental-hutch-python xpm-seq
+#    Expected: exit 0, zero ERROR and zero WARN lines, no tools/ tree created
+#    (none of the 12 ships a tools/ directory).
 
-# 4. The five cron repos — ONLY after §6 is resolved.
-# 5. Re-run with DEPLOY_CLAUDE=1 once claude/ root permissions are verified.
+# 4. Re-run step 3 with DEPLOY_CLAUDE=1 once the claude/ root permissions are
+#    inspected by hand (§10 proves the mode arithmetic, not the live filesystem).
+
+# 5. The five cron skills — ONLY after §6 is resolved upstream. Until then the
+#    guard refuses them and that is the correct outcome; do not work around it.
 ```
+
+Running a bare `./deploy.sh` is still safe — it just exits `3` after deploying the 12 and
+printing five `DEPLOY REFUSED` blocks. Exit `3` in that situation means "the guard did its
+job", not "the deploy broke". Check the log before reacting to it.
 
 ---
 ## 6. Cron hazard — READ THIS
 
 **Re-verified 2026-08-27. Still real, five for five.** Pre-existing; this change neither
-causes nor cures it. But a deploy triggers it.
+causes nor cures it. A deploy would trigger it, so a deploy-time guard now blocks it.
 
 `skill-ask-{epics,nersc,s3df,tiled,olcf}` each carry one divergent line. The repo's `main`
 says `chgrp -R ps-data`; the live deployed script says `ps-users`:
@@ -146,29 +179,91 @@ says `chgrp -R ps-data`; the live deployed script says `ps-users`:
 | `skill-ask-tiled` / `ask-tiled` | `tiled-docs` | 37 | `ps-data` | `ps-users` |
 | `skill-ask-olcf` / `ask-olcf` | `olcf-docs` | 38 | `ps-data` | `ps-users` |
 
-**Impact.** `deploy.sh` rsyncs `tools/` unconditionally, so deploying any of the five reverts
-its cron script. The next cron fire re-chgrps that corpus from `ps-users` (**3748** members)
-to `ps-data` (**61**) — 3687 people lose read access, per corpus.
-**`sdf-docs` is hourly** (`CRON_SCHEDULE="${CRON_SCHEDULE:-0 * * * *}"` on `sdfcron001`), so
-first damage lands within the hour. It is not latent.
+**Impact.** `deploy.sh` rsyncs `tools/` unconditionally, so deploying any of the five would
+revert its cron script. The next cron fire re-chgrps that corpus from `ps-users` (**3748**
+members) to `ps-data` (**61**) — 3687 people lose read access, per corpus. `ps-users` and
+`ps-data` are **not** nested. **`sdf-docs` is hourly**
+(`CRON_SCHEDULE="${CRON_SCHEDULE:-0 * * * *}"` on `sdfcron001`), so first damage lands within
+the hour. It is not latent.
 
-**Fix — one merge away.** Five branches, one commit each
-(`Fix cron chgrp target: ps-data -> ps-users`), at
-`/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/iter6-cron-fix/skill-ask-{epics,nersc,s3df,tiled,olcf}`,
-branch `fix/cron-chgrp-ps-users`. They are **committed but UNPUSHED**, so a `deploy.sh` that
-clones from GitHub cannot see them. Push and merge them to `main` before deploying those five.
+### 6.1 The deploy-time guard (shipped)
 
-**Stopgap until then:** deploy by explicit name, excluding all five (§5 step 3).
+`deploy.sh` now refuses to deploy a skill whose cron script still contains the ps-data
+`chgrp`. `assert_cron_group_safe()` runs inside `deploy_skill()` immediately after the clone
+and **before** every write: before `write_harness_meta()`, before `render.sh`, before the
+skill rsync, before the `claude/` rsync, before the `agents/` symlink, and before the
+`tools/` rsync. On a hit it prints a `DEPLOY REFUSED` block naming the file, the offending
+line with its line number, and the remedy; sets `DEPLOY_FAILED=1`; and returns without
+writing a byte for that skill. `main()` turns `DEPLOY_FAILED` into **exit 3**. Other skills
+deploy normally in the same run.
 
-**Pre-flight assertion** — for each of the five, this must print `1` before you proceed:
+It reads the cron script named by a new manifest column, `.cron.script`, so it only ever
+scans the five entries with a non-null `cron` block. It keys on **content, not on the five
+names** — rehearsed by pointing one clone at a locally fixed copy reading `ps-users`, which
+then deployed cleanly (exit 0) while its siblings were still refused.
+
+Three deliberate design points:
+
+- **Fail-closed on a missing script.** If the manifest names a `cron.script` the clone does
+  not have, that is an **ERROR**, not a warning. A warning would let one upstream rename
+  silently disable the check while the `tools/` rsync still shipped whatever script *is* in
+  the repo — exactly the silent regression the guard exists to stop.
+- **Path containment.** An absolute or `..`-containing `cron.script` is rejected, so a bad
+  manifest value cannot point the scan at the already-correct **live** copy and pass.
+- **No escape hatch.** There is no `ALLOW_PS_DATA_CRON`, no flag, no environment variable.
+  The only way past the guard is to fix the cron script upstream. This is intentional: an
+  override would be used once in a hurry and that once is the incident.
+
+### 6.2 The remedy — exactly what a human does
+
+The fix is one commit per repo, already written but **committed-and-unpushed**, so a
+`deploy.sh` that clones from GitHub cannot see it:
+
+```
+/sdf/data/lcls/ds/prj/prjdat21/results/cwang31/iter6-cron-fix/skill-ask-{epics,nersc,s3df,tiled,olcf}
+branch: fix/cron-chgrp-ps-users        subject: Fix cron chgrp target: ps-data -> ps-users
+```
+
+For each of the five: **push that branch and merge it to `main`** on the upstream GitHub
+repo. Pushing alone is not enough — `deploy.sh` clones the `ref` in the manifest, which is
+`main`. Then re-run the deploy; the guard will pass and the five will deploy.
+
+Pre-flight assertion — for each of the five, this must print `1` before you proceed:
 
 ```sh
 grep -c 'chgrp -R ps-users' <clone>/tools/<x>-docs/scripts/<x>-docs-cron.sh
 ```
 
-**Related, still open:** `tiled-docs-cron.sh` and `olcf-docs-cron.sh` are mode `0644` on both
-sides, so the tiled cron has never successfully run. `rsync -a` preserves the mode — a deploy
+**In the meantime**, deploy the other 12 by explicit name — §5 step 3.
+
+### 6.3 THE STACKED EXEC-BIT TRAP — do not cherry-pick
+
+`tiled-docs-cron.sh` and `olcf-docs-cron.sh` are mode **0644**, while their three siblings
+are **0755**. Measured on both sides:
+
+| cron script | repo mode | live mode |
+|---|---|---|
+| `epics-docs/scripts/epics-docs-cron.sh` | 755 | 755 |
+| `nersc-docs/scripts/nersc-docs-cron.sh` | 755 | 755 |
+| `sdf-docs/scripts/sdf-docs-cron.sh` | 755 | 755 |
+| `tiled-docs/scripts/tiled-docs-cron.sh` | **644** | **644** |
+| `olcf-docs/scripts/olcf-docs-cron.sh` | **644** | **644** |
+
+A non-executable cron script does not run. **The tiled-docs cron has therefore never once
+succeeded** — and the same is true of olcf-docs. `rsync -a` preserves the mode, so a deploy
 neither fixes nor worsens it.
+
+That is why the exec-bit fix is **stacked ON TOP of the chgrp fix, on purpose**, in the
+`fix/cron-chgrp-ps-users` branches. The two are not independent:
+
+> **Taking the exec-bit fix alone resurrects a dead cron that writes `ps-data`.**
+
+Today those two crons are inert, which is the only reason their `ps-data` line has not
+already cost anyone access. `chmod +x` them without the `ps-users` line and you take two
+corpora that are currently *not* being damaged and start damaging them on the next tick.
+
+**Rule: never cherry-pick the exec-bit commit by itself.** Merge the branch whole, chgrp fix
+first, or merge neither. If someone hands you "just the one-line chmod", refuse it.
 
 ---
 ## 7. Open questions
@@ -194,3 +289,122 @@ Every rehearsal goes to `/tmp`; `/sdf/group/lcls/ds/dm/apps/` stays read-only un
 Never modify the 17 external repos — `/tmp/mhr-staging` is pristine reference, rehearse
 against the `/tmp/mhr-work/staging` copy. Never `git add -A` / `git commit -a` here (§4).
 Host toolchain: bash 4.4.20 (not 5), jq 1.6 (not 1.7), rsync 3.1.3 (no `--mkpath`).
+
+---
+## 9. Pinned ref: cuda-docs (blocker 2)
+
+`skills.manifest.json` is JSON and cannot carry comments, so the pin is documented here.
+
+**The pin.** The `cuda-docs` entry's `"ref"` is `"421f3df7f1dbc20b4f581aa438eba802e7d3d4f4"`
+("Initial: cuda-docs knowledge wrapper", 2026-05-12), not `"main"`. This is deliberate and
+current — it is NOT a stale ref somebody forgot to bump.
+
+**Why.** Upstream `carbonscott/skill-cuda-docs` moved to HEAD `7da2b2d` ("Bundle CUDA docs and
+make data path skill-relative", 2026-05-17), which rewrote `SKILL.md` (2541 -> 2779 bytes) and
+added ~2.5 MB of `docs/*.md`, taking the skill off the `central_data` path the manifest still
+names (`/sdf/group/lcls/ds/dm/apps/dev/data/cuda-docs`). The LIVE deployed
+`opencode/skills/cuda-docs/` is a single `SKILL.md`, md5 `ecf3dfbe1137e04c91bfa80d3f41a04e`,
+2541 bytes, which is byte-identical to `421f3df`. Pinning to `421f3df` therefore makes this
+deploy a genuine no-op for cuda-docs instead of smuggling a content upgrade in with a harness
+refactor. `421f3df` is exactly 1 commit behind `main`/`7da2b2d`.
+
+**How to un-pin.** One line: set the entry's `"ref"` back to `"main"` (or to a newer SHA).
+Doing so is not a cosmetic change — it accepts the rewritten `SKILL.md` body plus the ~2.5 MB
+`docs/` bundle, and it requires revisiting `central_data`, because the bundled skill reads its
+docs from a skill-relative path and no longer uses the central data directory the manifest
+points at. Treat the upgrade as its own deliberate change with its own rehearsal and diff review.
+
+**SHA-ref support, and end-to-end verification.** `deploy.sh` originally cloned with
+`git clone --depth=1 -b "$ref"`, which cannot take a SHA. The second commit adds
+`is_sha_ref()` (full 40-character lowercase hex only) and a matching clone/update path:
+`git init` + `remote add` + `fetch --depth=1 origin <sha>` + `checkout --detach FETCH_HEAD`
+on a fresh clone, and `fetch --depth=1 origin <sha>` + `checkout --force --detach FETCH_HEAD`
+on an update. The forced detached checkout also recovers a staging clone an earlier run left
+attached to a branch. Verified on the host, not assumed: a shallow fetch of a **non-tip**
+commit succeeds (`allowAnySHA1InWant` is on), and an **abbreviated** SHA is rejected by the
+protocol (`fatal: couldn't find remote ref 524de15`) — which is why abbreviated hex is
+deliberately routed down the branch path to fail loudly rather than being guessed at.
+
+The pin is now verified **end to end**, not just statically. A fresh deploy of `cuda-docs`
+into a throwaway root exits `0`, leaves the clone detached at `421f3df…`, contains **no
+`docs/` directory anywhere**, and `diff -r` against the frozen live snapshot reports the
+deployed `opencode/skills/cuda-docs` and `claude/skills/cuda-docs` **byte-identical to live**
+(md5 `ecf3dfbe1137e04c91bfa80d3f41a04e`, 2541 B). Blocker 2 is a genuine no-op. The ref also
+round-trips: SHA → branch and branch → SHA both land on the right HEAD.
+
+---
+## 10. Permission parity rehearsal (blocker 3) — what it did and did not prove
+
+The `claude/` root permissions were previously untestable because `/tmp` was assumed not to
+reproduce the live filesystem's ACLs. That assumption was wrong: `/tmp` on this host is **xfs
+and does support POSIX ACLs**, so a faithful parity root was built and the test finally ran.
+
+**The parity root.** `/tmp/mhr-build-parity.sh` builds a root that is `chgrp ps-data` +
+`chmod 2775` + the live default ACL (`setfacl` access and default), pre-seeded with an
+`opencode/agents` shaped like live. `getfacl` on the mock and on live `dev/` is **byte-
+identical, every access and default entry** — including the `default:other::r-x` that is the
+whole reason `ensure_claude_root()` must set an absolute `2750` rather than a `chmod g+rX`
+that can only add bits.
+
+### PROVEN
+
+- **`ensure_claude_root()`'s absolute `2750` is correct under the real default ACL.** This is
+  the first time that has actually been demonstrated. `claude/` and `claude/skills/` both come
+  out `drwxr-s--- 2750 cwang31:ps-users`, with `getfacl` byte-identical to live `dev/opencode`
+  (`mask::r-x`, `other::---`, full default ACL inherited).
+- **The setgid trap and its remedy.** Demonstrated directly on a real `ps-data → ps-users`
+  chgrp: `chgrp` **clears** setgid on every directory it touches; a following `chmod -R g+rX`
+  does **not** restore it; only `rsync_and_chmod()`'s `find "$dst" -type d -exec chmod g+s {} +`
+  restores it. Instrumented probes inside a patched copy of `deploy.sh` show
+  `before chgrp: setgid-dirs=0/1 → after chgrp: 0/1 → after g+s: 1/1`, and at full scale
+  **54/54 directories setgid, 0 non-setgid**. The ordering is load-bearing and it works.
+- **The `chgrp` is load-bearing on *every* deploy, not just the first.** Unexpected finding
+  from the instrumentation: the group before `chgrp` is `gu`, not `ps-users`, even though
+  `mkdir` under the setgid parent *does* inherit `ps-users`. Cause: `rsync -a` implies `-g`
+  and the staging tree is `cwang31:gu`, so rsync actively reverts the destination directory to
+  `gu` and strips setgid on every run.
+- **Nothing leaks.** The only four non-other-readable directories are `opencode/`,
+  `opencode/agents/`, `claude/`, `claude/skills/`; all files are `o+r` and all skill dirs
+  `o+rx`, identical to live, with access gated one level up by `other::---`. The recorded
+  audit command produces **no output**:
+  `find <root> -path '*/env' -prune -o \( ! -perm -o+r ! -group ps-users -printf '%u %p\n' \)`
+- **The guard's blast radius.** A full 17-entry run into the parity root exits `3`, refuses
+  exactly the five, writes nothing for them, and **creates no `tools/` tree at all** — the only
+  five repos carrying `tools/` are precisely the five refused.
+
+### ONE REAL FINDING — `opencode/skills/` on a *fresh* root
+
+Created by `rsync_and_chmod()`'s bare `mkdir -p`, it comes out **`drwxrwsr-x 2775`** (group-
+writable, `other::r-x`) because it takes `other::r-x` and `mask::rwx` straight from the
+inherited default ACL, and `chmod -R g+rX` only ever *adds* bits. Live is `drwxr-s--- 2750`.
+This is the exact failure mode `ensure_claude_root()` exists to prevent, and **there is no
+equivalent guard on the opencode side.**
+
+In production it is **latent, not active**: live `opencode/skills` already exists at `2750`
+and `rsync_and_chmod()` never clears bits, so this deploy will not change it. It bites only if
+`opencode/skills` is ever recreated from scratch — a fresh `DEPLOY_ROOT`, a restore, a new
+environment. **Recommendation:** give `SKILLS_DST` / `AGENTS_DST` / `TOOLS_DST` the same
+`ensure_*_root()` absolute-mode treatment the `claude/` tree already gets. Not done in this
+commit.
+
+### NOT PROVEN — the residual gaps
+
+1. **Owner `psdatmgr`.** Live `dev/` is owned by `psdatmgr`; the mock is owned by `cwang31`,
+   and `chown` needs root. So the case where `chgrp`/`chmod` are attempted on a directory the
+   deployer does **not** own — precisely what `ensure_claude_root()`'s `2>/dev/null || WARN`
+   fallbacks exist for — is untested. The first real deploy will own the `claude/` it creates,
+   so this should not bite, but it is inferred.
+2. **The pre-existing live `opencode/skills` at `2750`.** The mock creates it fresh, so only
+   the fresh-creation mode was observed (the finding above). The pre-existing path is safe by
+   the "chmod never clears bits" argument, but it was not measured.
+3. **Effective access as a non-member.** The deployer is in both `ps-data` and `ps-users`, so
+   it is not empirically confirmed that one of the 3689 `ps-users`-but-not-`ps-data` members
+   can read the tree, nor that a non-member cannot. That is a mode/ACL argument, not a
+   measurement.
+4. **Filesystem class.** `/tmp` is xfs; live is a different (GPFS/Weka-class) store. ACL
+   semantics matched exactly here, but inheritance on the real backing store is asserted by
+   equivalence, not measured.
+5. **The five blocked skills' deploy path is entirely untested end to end** — by construction.
+   Until `fix/cron-chgrp-ps-users` is pushed and merged, no rehearsal can exercise the `tools/`
+   rsync, `TOOLS_DST` creation, or those skills' permissions. **This is the largest remaining
+   untested surface**, and it is exactly the surface the cron incident lives on.

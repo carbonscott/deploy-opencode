@@ -4,7 +4,7 @@
     {
       "name": "cuda-docs",
       "repo": "carbonscott/skill-cuda-docs",
-      "ref": "main",
+      "ref": "421f3df7f1dbc20b4f581aa438eba802e7d3d4f4",
       "cron": null,
       "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/cuda-docs",
       "harness": {

@@ -3,6 +3,14 @@
 Compared: `/tmp/mhr-mock-deploy/opencode` (rehearsed, iteration-2 manifest-harness deploy.sh)
       vs: `/tmp/mhr-live-snapshot/opencode` (frozen read-only copy of the live deployed tree)
 
+> **SUPERSEDED IN PART — read §6 first.** Everything below §6 records the
+> **iteration-3** rehearsal: all 17 skills, `cuda-docs` tracking `main`, no cron guard.
+> Since then the `cuda-docs` entry was pinned to a SHA and `deploy.sh` gained a cron
+> ps-data guard, which changes the bucket counts materially. §6 carries the current
+> numbers and says which iteration-3 differences the pin removed. The body is kept
+> verbatim because its per-path accounting is still the reference for everything the
+> pin and the guard did *not* touch.
+
 Method: `find`-based path sets on both sides, `comm` for set difference, `cmp` per common
 regular file, `readlink` per common symlink, `stat -c %a`/`%G` per common path, plus a
 frontmatter/body splitter for every `SKILL.md`. Nothing under `/sdf/group/lcls/ds/dm/apps/`
@@ -270,8 +278,83 @@ the only mode deltas it would apply to live are the 35 intended setgid additions
 
 ---
 
+## 6. Iteration-4 re-accounting — after the cuda-docs pin and the cron guard
+
+Compared: `/tmp/mhr-parity-root12/opencode` (the 12 deployable skills, `cuda-docs` pinned to
+`421f3df7f1dbc20b4f581aa438eba802e7d3d4f4`) vs the same frozen
+`/tmp/mhr-live-snapshot/opencode`. Same scope as §1 — all of `opencode/` minus `node_modules/`
+— and the iteration-3 comparison was re-run against `/tmp/mhr-mock-deploy` first to confirm
+the two runs are measured the same way.
+
+| bucket | iteration 3 (17 skills, `cuda-docs` on `main`) | **iteration 4 (12 skills, `cuda-docs` pinned)** | change |
+|---|---|---|---|
+| only-in-rehearsal | **4** | **0** | **−4** |
+| only-in-live | **39** | **84** | +45 |
+| present in both, CONTENT differs | **8** | **7** | **−1** |
+| **total differing paths** | **51** | **91** | +40 |
+
+### What the pin removed
+
+- **Bucket A is now empty.** The 4 only-in-rehearsal paths were *all* cuda-docs:
+  `skills/cuda-docs/docs`, `…/docs/best-practices.md`, `…/docs/driver-api.md`,
+  `…/docs/runtime-api.md` (§2 Bucket A). At `421f3df` that `docs/` bundle does not exist, so
+  **the rehearsal now adds nothing the live tree does not already have.**
+- **Bucket C dropped 8 → 7.** `skills/cuda-docs/SKILL.md` left the bucket: at the pin it is
+  byte-identical to live (md5 `ecf3dfbe1137e04c91bfa80d3f41a04e`, 2541 B), verified by
+  `diff -r` on both the `opencode/` and the `claude/` side. **The one flagged body change in
+  this document's HEADLINE is gone.**
+- The **remaining 7** are the same seven as §3 — `ask-ami`, `ask-lcls2`, `ask-slurm-s3df`,
+  `ask-smalldata`, `askcode`, `experimental-hutch-python`, `xpm-seq` — re-verified
+  **body-identical**: pure YAML frontmatter reserialization, zero body bytes changed.
+
+**The §3 summary line, restated for iteration 4:** of the 12 deployed skills, 5 are
+byte-identical to live and 7 differ only in frontmatter reserialization. **0 body changes,
+from any cause.** The `cuda-docs` row of the §3 table — the only `NO` in the "body identical?"
+column — no longer applies to what would actually ship.
+
+### What the guard added
+
+- **Bucket B grew 39 → 84, entirely explained.** The **+45** new paths all belong to the five
+  guard-refused skills: 5 `agents/` symlinks plus 40 entries under
+  `skills/ask-{epics,nersc,olcf,s3df,tiled}/` (each: the directory, `SKILL.md`, `env.sh`,
+  `env.local`, `setup.sh`, `bin/`, `bin/docs-index`, `bin/docs-index.py`).
+- **These are not deletions.** `--delete` in `rsync_and_chmod()` is scoped per-skill-directory,
+  and those directories are never rsynced at all, so a refused skill's live content is left
+  exactly as it stands. "Only-in-rehearsal-root" here means "the guard declined to touch it",
+  not "the deploy would remove it".
+- The other **39** are unchanged from §2 Bucket B: the 3 hand-managed skills, the 5 hand-written
+  `agents/*.md` plus a `.bak`, the 3 hand-made agent symlinks, and the 25 top-level unmanaged
+  paths (`commands/`, `opencode.json*`, `package*.json`, `bun.lock`, `.gitignore`).
+- The five refused skills also mean **no `tools/` tree is created** — the only five repos
+  carrying `tools/` are precisely the five refused.
+
+### Reading
+
+**The deploy is now strictly *less* invasive than the run this document originally measured.**
+It adds nothing new (bucket A empty), its only content change is 7 frontmatter reserializations
+with byte-identical bodies, and the five paths that could damage 3687 people's access are
+refused before a byte is written.
+
+### Modes — §5's "NOT proven" is now partly proven
+
+§5 above states that `/tmp` cannot reproduce production ACLs. **That has been superseded:**
+`/tmp` on this host is xfs and does support POSIX ACLs, and a parity root was built whose
+`getfacl` output is byte-identical to live `dev/` in every access and default entry. Under it,
+`ensure_claude_root()`'s absolute `2750` produces `drwxr-s--- cwang31:ps-users` for `claude/`
+and `claude/skills/`, and the `chgrp`-clears-setgid re-assertion was shown to be the only thing
+that sets setgid, at 54/54 directories. The residual gaps (owner `psdatmgr`, the pre-existing
+`opencode/skills` at `2750`, non-member access, the backing filesystem class) and the one real
+finding (a *freshly created* `opencode/skills` comes out `2775`, not `2750`) are recorded in
+`docs/manifest-harness-handoff.md` §10. §5's paragraph on the mock's `claude/` coming out
+`drwxr-s---` is resolved: that is the **intended** shape, matching live `dev/opencode`.
+
+---
+
 ## Appendix — artifacts
 
 - `/tmp/mhr-work/listA.txt`, `/tmp/mhr-work/listB.txt`, `/tmp/mhr-work/listB-nonm.txt`, `/tmp/mhr-work/common.txt`
 - `/tmp/mhr-work/content-diff.txt` (8 lines), `/tmp/mhr-work/mode-diff.txt` (52 lines)
 - `/tmp/mhr-work/cmp17.py`, `/tmp/mhr-work/cmp17.json` (per-skill machine-readable result)
+- Iteration 4: `/tmp/mhr-build-parity.sh`, `/tmp/mhr-parity-root`, `/tmp/mhr-parity-root12`,
+  `/tmp/mhr-pin-root`, `/tmp/mhr-trap`, `/tmp/mhr-setgid-demo`, `/tmp/mhr-instr-deploy.sh`,
+  `/tmp/mhr-2a.log`, `/tmp/mhr-2b.log`, `/tmp/mhr-pin.log`, `/tmp/mhr-inv-{live,new,i3}.tsv`

@@ -54,6 +54,136 @@ branches are still unpushed (§F.1); and skill *invocation* has never been teste
 end to end — every proof so far is about bytes on disk, not about a harness
 loading a skill and running it.
 
+### AS BUILT — iteration 4: the deployment-blocker fixes
+
+A second commit on `feat/manifest-harness-render` (on top of `5e9a05e`) carries the
+three blocker fixes. Measured, not estimated (`wc -l`):
+
+| file | lines | delta | what the second commit added |
+|---|---|---|---|
+| `deploy.sh` | **813** | 572 → 813, **+241** | `assert_cron_group_safe()` — the cron ps-data guard; `is_sha_ref()` plus a SHA-capable clone/update path; a 6th `parse_manifest()` TSV column `cron_script` carrying `.cron.script`; header comment blocks `REF FORMS` and `CRON ps-data GUARD`. `git diff --stat`: **255 insertions, 14 deletions.** |
+| `skills.manifest.json` | 280 | ±0 | **one line**: the `cuda-docs` entry's `"ref"` moves from `"main"` to `"421f3df7f1dbc20b4f581aa438eba802e7d3d4f4"`. A normalized `jq -S 'del(.skills[].harness)'` HEAD-vs-worktree diff shows that line and nothing else. `central_data` untouched. |
+| `render.sh` | 429 | ±0 | untouched. |
+| `validate-manifest.sh` | 285 | ±0 | untouched; still exits `0` on the pinned manifest (17 pre-existing menu-length warnings). |
+
+`bash -n deploy.sh` is clean. `set -euo pipefail` correctness is preserved: every
+added command is `if`-guarded, so no unguarded non-zero exit was introduced.
+
+#### The guard — where it sits
+
+`assert_cron_group_safe()` is called from `deploy_skill()` immediately after the
+clone/update block and **before source selection** — therefore before
+`write_harness_meta()`, `resolve_harness_source()`, `render.sh`, the skill rsync,
+the `claude/` rsync, the `agents/` symlink and the `tools/` rsync. Every write to
+`$DEPLOY_ROOT` is downstream of it. On refusal it sets `DEPLOY_FAILED=1` and
+returns, so sibling skills still deploy and `main()` exits `3` at the end.
+
+It is manifest-driven: it reads only `.cron.script`, which is non-empty for exactly
+the five `cron`-bearing entries. The legitimately-`ps-data` paths elsewhere in the
+fleet (`data/elog-copilot`, the three elog `tools/` dirs) are unreachable from this
+code path.
+
+#### The grep pattern, and why it is scoped this way
+
+```
+(^|[;&|(]|[[:space:]])chgrp([[:space:]]+-[^[:space:]]+)*[[:space:]]+['"]?ps-data['"]?([[:space:]]|$)
+```
+
+run over `grep -n` output with whole-line shell comments (`^[0-9]+:[[:space:]]*#`)
+filtered out first.
+
+Each clause earns its place:
+
+| clause | stops it being too narrow | stops it being too broad |
+|---|---|---|
+| `(^\|[;&\|(]\|[[:space:]])` before `chgrp` | catches `cd /x && chgrp …`, `foo; chgrp …` | a **filename** containing `chgrp` (`/opt/my-chgrp-ps-data-tool`) is not at a command start |
+| `([[:space:]]+-[^[:space:]]+)*` | any option spelling or count: `-R`, `--recursive`, `-h -R` | — |
+| `['"]?ps-data['"]?` | `chgrp -R "ps-data"` and `'ps-data'` | — |
+| trailing `([[:space:]]\|$)` | — | the group `ps-database` does not match |
+| group-**operand position** required | — | `echo "ps-data"`, a log string, `PS_DATA_GROUP=ps-data` do not match |
+| comment lines pre-filtered | — | `# we used to chgrp -R ps-data here` is inert documentation; a guard that refuses a deploy over a comment is a guard someone rips out |
+
+Reported line numbers are still the file's own (the `grep -v` runs on `grep -n`
+output, so the prefix survives).
+
+**15-case regex unit test, all passing:** 6 positives (the real line plus five
+rewordings) and 9 negatives (`ps-users`, `ps-database`, two comment forms,
+`echo "ps-data"`, a path containing `chgrp-ps-data`, `chgrp -R "$GROUP"` with a
+ps-data comment, `PS_DATA_GROUP=ps-data`, `chgrp -R ps-users "$D" # was ps-data`).
+
+**A second, softer check** covers `chgrp -R "$G"` — a group operand the guard
+cannot statically resolve. If `ps-data` also appears anywhere non-commented in that
+file it is a **hard error** (fail-closed: the guard cannot prove safety); otherwise
+it is a `WARN` and the deploy proceeds, because an unconditional error would
+over-fire on any legitimately parameterised script.
+
+**Three more scoping decisions.** A `cron.script` the clone does not contain is an
+**error**, not a warning (fail-closed — otherwise one upstream rename silently
+disables the check while the `tools/` rsync still ships the bad script). Absolute
+and `..`-containing `cron.script` values are rejected, reusing
+`resolve_harness_source()`'s containment rules, so a bad manifest value cannot aim
+the scan at the already-correct **live** copy and pass. And there is **no override
+flag, by design.**
+
+Behaviour, measured: a full 17-entry rehearsal exits `3` with exactly **5**
+`DEPLOY REFUSED` blocks (`ask-epics`, `ask-nersc`, `ask-s3df`, `ask-tiled`,
+`ask-olcf`), deploys the other **12**, and creates **no `tools/` tree at all**. The
+guard keys on **content, not names**: a clone whose cron script was locally
+corrected to `ps-users` deploys cleanly at exit `0`, `tools/` included. A
+branch-ref, non-cron skill produces a **byte-identical tree** under the old and new
+`deploy.sh` (`diff -r` clean, both exit `0`).
+
+#### SHA-ref support
+
+`is_sha_ref()` accepts **full 40-character lowercase hex only**. Anything else —
+abbreviated hex, uppercase, a branch, a tag — takes the branch path.
+
+```sh
+is_sha_ref() {
+  case "$1" in
+    *[!0-9a-f]*) return 1 ;;
+    ????????????????????????????????????????) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+```
+
+Fresh clone on the SHA path: `git init` + `remote add origin` +
+`git fetch --depth=1 origin <sha>` + `git checkout -q --detach FETCH_HEAD`
+(`git clone --depth=1 -b <sha>` cannot work — `-b` takes a branch or tag name).
+Update path: the same fetch + `git checkout -q --force --detach FETCH_HEAD`.
+
+The forced detached checkout is not cosmetic. The old update path did
+`checkout "$ref"` then `reset --hard "origin/$ref"` guarded by a `rev-parse
+--verify` that a SHA can never satisfy — so on a SHA there was **no reset
+equivalent at all**, and a staging clone left attached to a branch by an earlier
+run would never be pulled back to the pin. The forced detach fixes both.
+
+Verified on the host (git 2.43.7, GitHub over ssh), not assumed:
+
+- `git fetch --depth=1 origin 524de159dd0777f0c69920f0b03dc51b33dc14d8` — a
+  **non-tip** commit — succeeds (`* branch 524de15… -> FETCH_HEAD`, exit 0). So
+  `allowAnySHA1InWant` is enabled server-side and shallow SHA fetch is not a
+  tip-only special case.
+- `git fetch --depth=1 origin 524de15` fails with
+  `fatal: couldn't find remote ref 524de15`. Abbreviated SHAs are rejected by the
+  protocol regardless, and are anyway indistinguishable from a legal branch name —
+  hence the deliberate routing to the branch path, where they fail loudly.
+
+Round-trip tested four ways: fresh clone at the SHA, idempotent re-run, update from
+a branch-attached stage to the SHA, and update from a SHA-detached stage back to
+`main`. All exit `0` on the expected HEAD.
+
+#### The cuda-docs pin
+
+`"ref": "421f3df7f1dbc20b4f581aa438eba802e7d3d4f4"` — "Initial: cuda-docs knowledge
+wrapper", 2026-05-12, exactly **1 commit behind** `main` HEAD `7da2b2d`. The repo
+has only 2 commits total, so the search for a content match was exhaustive and
+exactly one commit matched: `SKILL.md` md5 `ecf3dfbe1137e04c91bfa80d3f41a04e`,
+2541 B, byte-identical to the live deployed file on both the `claude/` and
+`opencode/` sides. Rationale, un-pin procedure and its consequences:
+`docs/manifest-harness-handoff.md` §9.
+
 ---
 
 ## 0. Why
