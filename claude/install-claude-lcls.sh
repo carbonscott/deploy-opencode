@@ -37,17 +37,74 @@ warn() { echo "  WARN: $*" >&2; }
 die()  { echo "  ✗ $*" >&2; exit 1; }
 step() { echo; echo "── $*"; }
 
+# Marker matching is normalised: trailing whitespace and carriage returns are
+# stripped before comparing, so a CRLF rc or a marker line with a stray trailing
+# space is still recognised. EVERY marker test below goes through one of these
+# three helpers, so grep-style and awk-style matching can never drift apart.
+
 # stdout = $1 with only COMPLETE marker blocks removed. An UNTERMINATED block
 # (begin marker, no end marker) is held back and re-emitted verbatim, so a
 # hand-edited or half-written rc never loses everything below the marker.
 strip_block() {
   awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
-    $0 == b && !inblk { inblk = 1; hold = $0 ORS; next }
-    inblk && $0 == e  { inblk = 0; hold = "";      next }
-    inblk             { hold = hold $0 ORS;        next }
-                      { print }
-    END               { if (inblk) printf "%s", hold }
+    { line = $0; sub(/[ \t\r]+$/, "", line) }
+    line == b && !inblk { inblk = 1; hold = $0 ORS; next }
+    inblk && line == e  { inblk = 0; hold = "";      next }
+    inblk               { hold = hold $0 ORS;        next }
+                        { print }
+    END                 { if (inblk) printf "%s", hold }
   ' "$1"
+}
+
+# Exit 0 when $1 contains a begin marker at all.
+# Exits non-zero for "no", so call it only as an `if`/`&&` condition.
+has_block() {
+  awk -v b="$MARK_BEGIN" '
+    { line = $0; sub(/[ \t\r]+$/, "", line) }
+    line == b { found = 1 }
+    END       { exit (found ? 0 : 1) }
+  ' "$1"
+}
+
+# Exit 0 when $1's markers are unbalanced, either shape:
+#   * a begin marker with NO matching end marker — what strip_block refuses to
+#     delete, so appending on top of it would build a 2-begin/1-end rc;
+#   * a second begin marker INSIDE an open block — that 2-begin/1-end rc, which
+#     an earlier version of this script could produce, and whose user lines
+#     strip_block would swallow between the orphan begin and the first end.
+# Same normalisation as strip_block, so the two can never disagree about what a
+# marker is. Exits non-zero for "no", so call it only as an `if`/`&&` condition.
+has_unterminated_block() {
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
+    { line = $0; sub(/[ \t\r]+$/, "", line) }
+    line == b && !inblk { inblk = 1; next }
+    line == b && inblk  { bad = 1;   next }
+    inblk && line == e  { inblk = 0; next }
+    END                 { exit ((inblk || bad) ? 0 : 1) }
+  ' "$1"
+}
+
+# strip_block $1 back into place, PRESERVING mode and ownership. The GNU
+# `sed -i` this replaced kept the mode; a fresh temp file + mv would silently
+# widen a 600 rc to whatever the umask says.
+rewrite_stripped() {
+  local rc="$1" tmp="$1.tmp.$$"
+  strip_block "$rc" > "$tmp"
+  chmod --reference="$rc" "$tmp" 2>/dev/null || chmod "$(stat -c %a "$rc")" "$tmp"
+  chown --reference="$rc" "$tmp" 2>/dev/null || true
+  mv "$tmp" "$rc"
+}
+
+# rc files left untouched because their markers are broken; reported at the end.
+SKIPPED_RCS=""
+
+# Warn about, and record, an rc whose markers we refuse to edit.
+skip_broken_rc() {
+  local rc="$1"
+  warn "$rc has an UNTERMINATED $FUNC_NAME block: a '$MARK_BEGIN' line with no matching '$MARK_END' (or a second '$MARK_BEGIN' inside an open block)."
+  warn "left $rc COMPLETELY untouched — nothing stripped, nothing appended, no backup written."
+  warn "fix it by hand (delete the stray '$MARK_BEGIN' line, or add the missing '$MARK_END') so exactly one begin/end pair remains, then re-run."
+  SKIPPED_RCS="$SKIPPED_RCS $rc"
 }
 
 MODE=install
@@ -83,16 +140,19 @@ if [ "$MODE" = uninstall ]; then
   step "Removing $FUNC_NAME"
   while IFS= read -r rc; do
     [ -f "$rc" ] || continue
-    if grep -qF "$MARK_BEGIN" "$rc"; then
+    if has_unterminated_block "$rc"; then
+      # Stripping here would be safe, but appending on the next INSTALL would
+      # not: refuse uniformly so the user repairs the file once.
+      skip_broken_rc "$rc"
+      continue
+    fi
+    if has_block "$rc"; then
       if [ "$DRY_RUN" = 1 ]; then
         echo "  (dry-run) would strip the $FUNC_NAME block from $rc"
       else
         cp -p "$rc" "$rc.claude-lcls-bak"
-        strip_block "$rc" > "$rc.tmp.$$" && mv "$rc.tmp.$$" "$rc"
+        rewrite_stripped "$rc"
         ok "stripped from $rc (backup: $rc.claude-lcls-bak)"
-        if grep -qF "$MARK_BEGIN" "$rc"; then
-          warn "$rc has an UNTERMINATED $FUNC_NAME block (missing '$MARK_END'); left it alone — fix it by hand"
-        fi
       fi
     else
       ok "nothing to strip in $rc"
@@ -132,6 +192,11 @@ if [ "$MODE" = uninstall ]; then
   fi
 
   echo
+  if [ -n "$SKIPPED_RCS" ]; then
+    warn "left untouched and still needing manual repair:$SKIPPED_RCS"
+    warn "the $FUNC_NAME block was NOT removed from the file(s) above."
+    echo
+  fi
   echo "Config dir left in place: $LCLS_DIR"
   echo "Remove it yourself if you want it gone:  rm -rf $LCLS_DIR"
   echo "Your own ~/.claude/ was never touched."
@@ -329,15 +394,19 @@ $MARK_END
 EOF
 
 while IFS= read -r rc; do
-  if [ -f "$rc" ] && grep -qF "$MARK_BEGIN" "$rc"; then
+  # An unterminated block cannot be stripped, and appending a fresh block on top
+  # of it leaves two begin markers and one end marker — a shape the NEXT run
+  # would "strip" by deleting every user line between them. Refuse instead.
+  if [ -f "$rc" ] && has_unterminated_block "$rc"; then
+    skip_broken_rc "$rc"
+    continue
+  fi
+  if [ -f "$rc" ] && has_block "$rc"; then
     if [ "$DRY_RUN" = 1 ]; then
       echo "  (dry-run) would refresh the existing block in $rc"
     else
       cp -p "$rc" "$rc.claude-lcls-bak"
-      strip_block "$rc" > "$rc.tmp.$$" && mv "$rc.tmp.$$" "$rc"
-      if grep -qF "$MARK_BEGIN" "$rc"; then
-        warn "$rc has an UNTERMINATED $FUNC_NAME block (missing '$MARK_END'); left it alone — fix it by hand"
-      fi
+      rewrite_stripped "$rc"
       printf '\n%s\n' "$SNIPPET" >> "$rc"
       ok "refreshed in $rc"
     fi
@@ -350,6 +419,12 @@ while IFS= read -r rc; do
     fi
   fi
 done < <(rc_files)
+
+if [ -n "$SKIPPED_RCS" ]; then
+  echo
+  warn "left untouched and still needing manual repair:$SKIPPED_RCS"
+  warn "$FUNC_NAME was NOT installed into the file(s) above; repair the markers and re-run."
+fi
 
 # ─── Verify, for real ─────────────────────────────────────────────────────
 step "Verification"
