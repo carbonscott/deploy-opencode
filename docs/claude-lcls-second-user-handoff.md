@@ -282,35 +282,72 @@ Expected shape:
 2.1.235 (Claude Code)
 ```
 
-If both lines come up empty, install Claude Code first. The installer will stop
-with `no 'claude' on PATH and no versioned binary under ...` and write nothing.
+If both lines come up empty, install Claude Code first. The official native
+installer needs no root and writes only inside your `$HOME`:
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+It puts the binary under `~/.local/share/claude/versions/` and a launcher at
+`~/.local/bin/claude`. If you then get `claude: command not found`, that
+directory is not on your `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Re-run the `--version` check above once it resolves.
+
+You do **not** need your own Anthropic subscription to use `claude-lcls`. It
+authenticates to the SLAC AI Gateway with the shared key via the `apiKeyHelper`
+entry the installer writes. A personal subscription matters only if you also
+want to use plain `claude` on its own account.
+
+Without any binary, the installer stops with `no 'claude' on PATH and no
+versioned binary under ...` and writes nothing.
 
 ---
 
 ## 3. How to obtain the installer
 
-Three candidate routes were checked on the host. **Only one works for you
-today.**
+Three candidate routes were checked on the host. **Route A is the shortest and
+Route C is the fallback that always works. Route B works only for the handful of
+people who are also in `ps-data`, `ps-prj` or `prjdat21`.**
 
-### Route A — the shared read-only tree: DOES NOT WORK
+### Route A — the shared tree: SHORTEST ROUTE
 
-`/sdf/group/lcls/ds/dm/apps/dev/claude/` is the deployed tree you can read, and
-it contains **only** `skills/`:
+The installer is published in the shared tree and is readable by any `ps-users`
+member:
 
-```
-$ ls -l /sdf/group/lcls/ds/dm/apps/dev/claude/
-total 0
-drwxr-s---+ 1 cwang31 ps-users 0 Aug 27 00:15 skills
-```
-
-```
-$ find /sdf/group/lcls/ds/dm/apps/dev -name 'install-claude-lcls*'
-(no output — the whole deploy root was searched, not just claude/)
+```bash
+ls -l /sdf/group/lcls/ds/dm/apps/dev/claude/install-claude-lcls.sh
 ```
 
-The installer is not published there. Nothing under
-`/sdf/group/lcls/ds/dm/apps/` may be written during this campaign, so it will
-not appear there as part of this exercise either.
+Expected:
+
+```
+-rwxr-xr-x+ 1 cwang31 ps-users 29467 Aug 27 16:40 .../claude/install-claude-lcls.sh
+```
+
+Check it before you run it:
+
+```bash
+wc -l /sdf/group/lcls/ds/dm/apps/dev/claude/install-claude-lcls.sh   # expect 693
+md5sum /sdf/group/lcls/ds/dm/apps/dev/claude/install-claude-lcls.sh  # expect 51440d603fd6353fc5d0212b05e653a6
+```
+
+That copy was written straight from `origin/main`, so it is byte-identical to
+what Route C hands you — same 693 lines, same `51440d60...` digest.
+
+Access is gated by the directory rather than the file. `dev/claude/` is mode
+`2750` owned by `cwang31:ps-users` with `other::---`, so `ps-users` members can
+read it and nobody else can. If the `ls` above fails with permission denied, you
+are most likely not in `ps-users`; re-check section 2.1.
+
+One caveat worth knowing: this is a published copy, not a symlink to the repo.
+If the installer on `main` is ever updated, the copy is refreshed by hand. The
+`md5sum` check above is what tells you the two still agree.
 
 ### Route B — cwang31's repo directory on disk: DOES NOT WORK for you
 
