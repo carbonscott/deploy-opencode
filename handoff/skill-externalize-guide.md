@@ -24,7 +24,7 @@ Conventions:
 - `claude/skills/<name>/` and `opencode/skills/<name>/` hold **identical content, duplicated**. No `shared/` directory. (User explicitly chose duplication over a shared root.)
 - `tools/<X>/` exists only for skills that have a data-sync cron job. It rsyncs to `/sdf/group/lcls/ds/dm/apps/dev/tools/<X>/`.
 - The skill does **not** contain bulk data. Data lives centrally at `/sdf/group/lcls/ds/dm/apps/dev/data/<X>/` (e.g. `epics-docs/`, `sdf-docs/`) and is managed by cron.
-- No per-repo `install.sh`. Deployment is centralized in this repo's `deploy.sh`.
+- No per-repo installer for the **shared** deploy — that is centralized in this repo's `deploy.sh`. A repo may still ship an `install.sh` for people running Claude Code on their own machine (`slac-confluence-search` does); it must not be the path used to populate `/sdf/group/lcls/ds/dm/apps/dev/`. Watch for installers that symlink by default: a link into a maintainer's personal `ps-data` tree is unreadable to `ps-users` and is how confluence-search was first mis-deployed.
 - Free-form scripts inside each repo (no shared installer library).
 
 ## Manifest
@@ -67,14 +67,19 @@ Fields:
 
 ## Permissions (the recurring gotcha)
 
-Every deployed file under `/sdf/group/lcls/ds/dm/apps/dev/` must be readable by the `ps-data` group:
+Every deployed file under `/sdf/group/lcls/ds/dm/apps/dev/` must be readable by the **`ps-users`**
+group (~3700 employees), not `ps-data` (~60):
 
 ```bash
-chgrp -R ps-data <path>
+chgrp -R ps-users <path>
 chmod -R g+rX <path>
 ```
 
-See `docs/incident-permissions-fix-2026-02-12.md` for the original incident. `deploy.sh` enforces this after every rsync — if you change the script, do not drop these calls.
+`ps-data` is wrong here and silently locks out almost everyone — an earlier version of this guide
+said `ps-data`, which is why `deploy.sh` now defaults `GROUP=ps-users`. See the Group Ownership
+Policy in `CLAUDE.md` for the full rule and the short list of elog-only exceptions, and
+`docs/incident-permissions-fix-2026-02-12.md` for the original incident. `deploy.sh` enforces this
+after every rsync — if you change the script, do not drop these calls.
 
 ## How `deploy.sh` works
 
@@ -82,7 +87,7 @@ See `docs/incident-permissions-fix-2026-02-12.md` for the original incident. `de
 2. For each skill:
    a. Clone or fetch `git@github.com:<repo>.git` at `<ref>` into `$STAGING_ROOT/<name>`.
    b. `rsync -a --delete <stage>/opencode/skills/<name>/` → `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/<name>/`.
-   c. Fix permissions (chgrp ps-data + g+rX).
+   c. Fix permissions (chgrp ps-users + g+rX).
    d. Ensure `opencode/agents/<name>` symlink → `../skills/<name>` exists in the deployed `agents/` dir.
    e. If `<stage>/tools/` exists, rsync each `tools/<X>/` to `/sdf/group/lcls/ds/dm/apps/dev/tools/<X>/` and fix perms.
 3. Cron installation is **out of scope** for `deploy.sh` v1 — operator installs/updates `crontab` on `sdfcron001` manually using the `schedule + script` info from the manifest. Future versions may automate this.
