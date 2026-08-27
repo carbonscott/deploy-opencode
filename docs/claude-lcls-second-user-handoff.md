@@ -752,9 +752,12 @@ message text and the exit status are real; only the cause was simulated.
 ### How rows 4 and 5 were exercised
 
 Row 4: a scratch `HOME` whose `.bashrc` was `chmod 444`. The gate that produces
-it (`rc_is_writable`) runs **before** the append, and checks write permission on
-both the file and its directory — the directory because a refresh renames a
-temp file into place. Afterwards the rc was confirmed still mode `444` and
+it (`rc_is_writable`) runs **before** the append, and asks for exactly the
+permission the operation needs: write on the FILE for an append, and write on
+the DIRECTORY as well only when the rc already carries a block, because that is
+the refresh path and it renames a temp file into place. Demanding both
+unconditionally would refuse an rc that a plain append would have handled
+perfectly well. Afterwards the rc was confirmed still mode `444` and
 byte-identical to the pre-run file by md5, with no `.claude-lcls-bak` written.
 Everything earlier in the run — config dir, `settings.json` at mode `600`, all
 17 skill symlinks — is still created before the gate is reached, so a re-run
