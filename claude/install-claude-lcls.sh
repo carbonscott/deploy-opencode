@@ -42,17 +42,45 @@ step() { echo; echo "── $*"; }
 # space is still recognised. EVERY marker test below goes through one of these
 # three helpers, so grep-style and awk-style matching can never drift apart.
 
-# stdout = $1 with only COMPLETE marker blocks removed. An UNTERMINATED block
-# (begin marker, no end marker) is held back and re-emitted verbatim, so a
-# hand-edited or half-written rc never loses everything below the marker.
+# stdout = $1 with only COMPLETE marker blocks removed, PLUS the single blank
+# line the install appends immediately before each block. The install writes
+# `printf '\n%s\n' "$SNIPPET" >> "$rc"`, so every run adds one leading blank;
+# a strip that removed only marker-to-marker lines left every one of them
+# behind and ten installs + one --uninstall left ten blank lines where the
+# original file had none. Blank lines are therefore buffered, and exactly one
+# is dropped when it is directly adjacent to a begin marker.
+#
+# An UNTERMINATED block (begin marker, no end marker) is held back and
+# re-emitted verbatim -- together with the blank line provisionally dropped in
+# front of it -- so a hand-edited or half-written rc never loses anything.
 strip_block() {
   awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
+    function flush(drop,   i, n) {
+      have_dropped = 0; dropped = ""
+      n = nb
+      # Only a TRULY empty line can be the separator the install wrote with
+      # printf "\n". A line of spaces or tabs belongs to the user and is never
+      # consumed, even though the marker normalisation above calls it blank.
+      if (drop && nb > 0 && pend[nb] == "") {
+        dropped = pend[nb]; have_dropped = 1; n = nb - 1
+      }
+      for (i = 1; i <= n; i++) print pend[i]
+      nb = 0
+    }
     { line = $0; sub(/[ \t\r]+$/, "", line) }
-    line == b && !inblk { inblk = 1; hold = $0 ORS; next }
     inblk && line == e  { inblk = 0; hold = "";      next }
     inblk               { hold = hold $0 ORS;        next }
-                        { print }
-    END                 { if (inblk) printf "%s", hold }
+    line == b           { flush(1); inblk = 1; hold = $0 ORS; next }
+    line == ""          { pend[++nb] = $0;           next }
+                        { flush(0); print }
+    END                 {
+                          if (inblk) {
+                            if (have_dropped) print dropped
+                            printf "%s", hold
+                          } else {
+                            flush(0)
+                          }
+                        }
   ' "$1"
 }
 
@@ -84,15 +112,45 @@ has_unterminated_block() {
   ' "$1"
 }
 
-# strip_block $1 back into place, PRESERVING mode and ownership. The GNU
-# `sed -i` this replaced kept the mode; a fresh temp file + mv would silently
-# widen a 600 rc to whatever the umask says.
+# stdout = the physical file $1 refers to; exit 1 when a symlink cannot be
+# resolved. `readlink -f` exits 1 and prints NOTHING when a non-final component
+# of the chain is missing, or when the chain loops back on itself. Every caller
+# has to notice that: an unchecked `target="$(readlink -f "$rc")"` leaves target
+# empty, `dirname ""` is ".", and every later test then silently asks about the
+# current directory instead of the rc -- so the same $HOME gives a different
+# answer depending on where the user happened to cd first.
+rc_target() {
+  local rc="$1" t
+  if [ -L "$rc" ]; then
+    t="$(readlink -f "$rc" 2>/dev/null)" || return 1
+    [ -n "$t" ] || return 1
+    printf '%s\n' "$t"
+  else
+    printf '%s\n' "$rc"
+  fi
+}
+
+# strip_block $1 back into place, PRESERVING mode, ownership AND symlink-ness.
+# The GNU `sed -i` this replaced kept the mode; a fresh temp file + mv would
+# silently widen a 600 rc to whatever the umask says -- hence the chmod.
+#
+# The symlink resolution matters just as much: a $HOME/.bashrc that is a
+# symlink into a dotfiles repo is the common case for anyone using stow or
+# chezmoi, and renaming a temp file over it REPLACES the link with a regular
+# file. The dotfiles copy is then orphaned still holding a claude-lcls block
+# that --uninstall can never reach, and the next `stow` puts that stale block
+# straight back. The first install never showed this because it takes the
+# append path (`>>` follows the link); only the SECOND run, which rewrites,
+# broke the link. Resolve to the physical file and rename onto THAT instead,
+# which keeps the rename atomic and leaves $HOME/.bashrc a symlink.
 rewrite_stripped() {
-  local rc="$1" tmp="$1.tmp.$$"
+  local rc="$1" target tmp
+  target="$(rc_target "$rc")" || die "cannot resolve $rc to a real file: broken symlink chain, or a symlink loop."
+  tmp="$target.tmp.$$"
   strip_block "$rc" > "$tmp"
-  chmod --reference="$rc" "$tmp" 2>/dev/null || chmod "$(stat -c %a "$rc")" "$tmp"
-  chown --reference="$rc" "$tmp" 2>/dev/null || true
-  mv "$tmp" "$rc"
+  chmod --reference="$target" "$tmp" 2>/dev/null || chmod "$(stat -c %a "$target")" "$tmp"
+  chown --reference="$target" "$tmp" 2>/dev/null || true
+  mv "$tmp" "$target"
 }
 
 # rc files left untouched because their markers are broken; reported at the end.
@@ -105,6 +163,92 @@ skip_broken_rc() {
   warn "left $rc COMPLETELY untouched — nothing stripped, nothing appended, no backup written."
   warn "fix it by hand (delete the stray '$MARK_BEGIN' line, or add the missing '$MARK_END') so exactly one begin/end pair remains, then re-run."
   SKIPPED_RCS="$SKIPPED_RCS $rc"
+}
+
+# rc files left untouched because we cannot write them; reported at the end.
+UNWRITABLE_RCS=""
+
+# Set to 1 as soon as the block lands in ANY rc. The end-of-section verdict
+# turns on it: refusing one rc while successfully installing into another is a
+# warning, not a failure, and must not abort before verification runs.
+RC_INSTALLED=0
+
+# Exit 0 when $1 can actually be updated by the operation about to run on it.
+#
+# Without this gate a mode-444 rc (or a $HOME/.bashrc that is a DIRECTORY)
+# surfaced as a bare `install-claude-lcls.sh: line NNN: /path/.bashrc:
+# Permission denied` from bash -- and only AFTER the config dir, settings.json
+# and all 17 skill symlinks had already been written, bypassing every warn/skip
+# path this script owns. Check first, and report it the way we report every
+# other rc we refuse to touch.
+#
+# The two write paths need DIFFERENT permissions, and demanding both refuses rc
+# files we can handle perfectly well:
+#   * append (`>> "$rc"`) needs write on the FILE only. A read-only parent
+#     directory is irrelevant, because no new name is ever created there.
+#   * refresh (rewrite_stripped) renames a temp file into the file's directory,
+#     so it needs write on the DIRECTORY too -- but it only ever runs when the
+#     rc already carries a block.
+# The directory is therefore required only when has_block says the refresh path
+# is the one that will be taken.
+rc_is_writable() {
+  local rc="$1" target dir
+  target="$(rc_target "$rc")" || return 1
+  dir="$(dirname "$target")"
+  # Exists but is not a regular file: a directory, a socket, a device.
+  if [ -e "$target" ] && [ ! -f "$target" ]; then return 1; fi
+  if [ ! -e "$target" ]; then
+    # We would have to create it, so only its directory matters.
+    [ -d "$dir" ] && [ -w "$dir" ]
+    return
+  fi
+  [ -w "$target" ] || return 1
+  if has_block "$rc"; then
+    [ -w "$dir" ] || return 1
+  fi
+  return 0
+}
+
+# Warn about, and record, an rc we cannot write.
+#
+# The diagnosis has to name the thing that is ACTUALLY wrong. Reporting
+# "not writable (mode 644)" for a perfectly writable file whose DIRECTORY is
+# read-only contradicts itself in its own text, and the `chmod u+w` it suggests
+# is a no-op that leaves the next run failing in exactly the same way.
+#
+# rc_target is called through `|| target=""` deliberately: it is ALLOWED to
+# fail on a broken chain or a symlink loop, and this function runs as a plain
+# statement rather than as a condition, so an unguarded command substitution
+# would abort the whole script under `set -euo pipefail` -- printing nothing at
+# all, which is the one outcome worse than the bare bash error this gate exists
+# to replace.
+skip_unwritable_rc() {
+  local rc="$1" target dir
+  target="$(rc_target "$rc")" || target=""
+  if [ -z "$target" ]; then
+    warn "$rc is a symlink that cannot be resolved: a missing directory somewhere in the chain, or a symlink loop."
+    warn "inspect it with:  ls -l $rc   and   readlink -f $rc"
+  else
+    dir="$(dirname "$target")"
+    if [ "$target" != "$rc" ]; then
+      warn "$rc is a symlink to $target; everything below refers to the target."
+    fi
+    if [ -d "$target" ]; then
+      warn "$target is a DIRECTORY, not a shell rc file."
+      warn "move it aside (or point $rc at a real file), then re-run."
+    elif [ -e "$target" ] && [ ! -f "$target" ]; then
+      warn "$target exists but is not a regular file, so it is not a shell rc."
+    elif [ -e "$target" ] && [ ! -w "$target" ]; then
+      warn "$target is not writable (mode $(stat -c %a "$target" 2>/dev/null || echo '?'), owner $(stat -c %U "$target" 2>/dev/null || echo '?'))."
+      warn "fix it with: chmod u+w $target   (then re-run this script)"
+    else
+      warn "$target is writable, but its directory $dir is not (mode $(stat -c %a "$dir" 2>/dev/null || echo '?'), owner $(stat -c %U "$dir" 2>/dev/null || echo '?'))."
+      warn "refreshing an existing block renames a temp file into that directory, so it needs write permission on the DIRECTORY, not on the file."
+      warn "fix it with: chmod u+w $dir   (then re-run this script)"
+    fi
+  fi
+  warn "left $rc COMPLETELY untouched -- nothing stripped, nothing appended, no backup written."
+  UNWRITABLE_RCS="$UNWRITABLE_RCS $rc"
 }
 
 MODE=install
@@ -140,6 +284,10 @@ if [ "$MODE" = uninstall ]; then
   step "Removing $FUNC_NAME"
   while IFS= read -r rc; do
     [ -f "$rc" ] || continue
+    if ! rc_is_writable "$rc"; then
+      skip_unwritable_rc "$rc"
+      continue
+    fi
     if has_unterminated_block "$rc"; then
       # Stripping here would be safe, but appending on the next INSTALL would
       # not: refuse uniformly so the user repairs the file once.
@@ -197,9 +345,21 @@ if [ "$MODE" = uninstall ]; then
     warn "the $FUNC_NAME block was NOT removed from the file(s) above."
     echo
   fi
+  if [ -n "$UNWRITABLE_RCS" ]; then
+    warn "not writable, left untouched:$UNWRITABLE_RCS"
+    warn "the $FUNC_NAME block is STILL PRESENT in the file(s) above."
+    warn "fix the permissions and re-run:  $0 --uninstall"
+    echo
+  fi
   echo "Config dir left in place: $LCLS_DIR"
   echo "Remove it yourself if you want it gone:  rm -rf $LCLS_DIR"
   echo "Your own ~/.claude/ was never touched."
+  # An uninstall that left a block behind did not uninstall. Exiting 0 here told
+  # a scripted caller the function was gone while claude-lcls() was still being
+  # defined by the user's next shell.
+  if [ -n "$SKIPPED_RCS$UNWRITABLE_RCS" ] && [ "$DRY_RUN" != 1 ]; then
+    exit 1
+  fi
   exit 0
 fi
 
@@ -408,6 +568,12 @@ $MARK_END
 EOF
 
 while IFS= read -r rc; do
+  # Checked before anything else: an rc we cannot write must not reach the
+  # append below, where bash would report the failure in its own words.
+  if ! rc_is_writable "$rc"; then
+    skip_unwritable_rc "$rc"
+    continue
+  fi
   # An unterminated block cannot be stripped, and appending a fresh block on top
   # of it leaves two begin markers and one end marker — a shape the NEXT run
   # would "strip" by deleting every user line between them. Refuse instead.
@@ -432,12 +598,43 @@ while IFS= read -r rc; do
       ok "appended to $rc"
     fi
   fi
+  # Reached only when the rc was neither skipped nor refused, so the block is
+  # in (or, under DRY_RUN, would be in) this file.
+  RC_INSTALLED=1
 done < <(rc_files)
 
 if [ -n "$SKIPPED_RCS" ]; then
   echo
   warn "left untouched and still needing manual repair:$SKIPPED_RCS"
   warn "$FUNC_NAME was NOT installed into the file(s) above; repair the markers and re-run."
+fi
+
+if [ -n "$UNWRITABLE_RCS" ]; then
+  echo
+  warn "not writable, left untouched:$UNWRITABLE_RCS"
+  warn "$FUNC_NAME was NOT installed into the file(s) above; fix the permissions and re-run."
+fi
+
+# ONE verdict covering both refusal paths. What matters is not WHY an rc was
+# refused but whether the block reached any rc at all:
+#   * some rc took it -> warn about the ones that did not, and carry on to the
+#     verification step, which is still worth running.
+#   * none did        -> the script did not do its job, and says so with exit 1.
+#     The previous shape exited 0 and printed the full "Done. Start a new
+#     shell" banner having installed the function precisely nowhere.
+# Everything else (config dir, settings.json, skill symlinks) is already in
+# place and is deliberately left as-is, so a re-run finishes the job.
+if [ -n "$SKIPPED_RCS$UNWRITABLE_RCS" ]; then
+  if [ "$RC_INSTALLED" -eq 1 ]; then
+    echo
+    warn "$FUNC_NAME WAS installed into at least one other rc; continuing."
+  elif [ "$DRY_RUN" = 1 ]; then
+    echo
+    warn "a real run would stop here with exit 1: no usable shell rc."
+  else
+    echo
+    die "$FUNC_NAME could not be installed into ANY shell rc. Fix the file(s) above and re-run."
+  fi
 fi
 
 # ─── Verify, for real ─────────────────────────────────────────────────────
