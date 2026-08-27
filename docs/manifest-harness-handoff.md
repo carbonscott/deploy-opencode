@@ -408,3 +408,61 @@ commit.
    Until `fix/cron-chgrp-ps-users` is pushed and merged, no rehearsal can exercise the `tools/`
    rsync, `TOOLS_DST` creation, or those skills' permissions. **This is the largest remaining
    untested surface**, and it is exactly the surface the cron incident lives on.
+
+## DEPLOYED — 2026-08-27
+
+**What ran:** `./deploy.sh` against the live root `/sdf/group/lcls/ds/dm/apps/dev`, in two
+stages, naming skills explicitly — stage one `DEPLOY_CLAUDE=0` (exit 0), stage two
+`DEPLOY_CLAUDE=1` (exit 0). Logs: `/tmp/mhr-deploy-stage1.log`, `/tmp/mhr-deploy-stage2.log`.
+
+**Deployed (12, `cron: null`):** cuda-docs (pinned SHA `421f3df7`), ask-ami, ask-lcls2,
+ask-smalldata, ask-slurm-s3df, ask-slac-ai-tools, askcode, docs-search,
+experimental-hutch-python, xpm-seq, confluence-search, elog-search.
+
+**NOT deployed (5, `cron` non-null):** ask-epics, ask-nersc, ask-s3df, ask-tiled, ask-olcf.
+Their manifest `ref` is `main`, and `main` upstream still carries `chgrp -R ps-data`. The
+ps-data guard would hard-refuse them, so they were never named. Verified byte-identical to the
+pre-deploy backup after both stages.
+
+**What changed in live** (independently re-derived: full md5 inventory of `dev/opencode` vs
+the backup, plus `rsync -aHAXni --checksum --delete` over `dev/tools`):
+
+- 0 paths added, **0 paths removed**, 7 files content-changed — all `SKILL.md`:
+  ask-ami, askcode, ask-lcls2, ask-slurm-s3df, ask-smalldata, experimental-hutch-python,
+  xpm-seq. Frontmatter reserialized only (quoting style / folded scalars flattened);
+  **all 7 bodies byte-identical** to the backup after frontmatter stripping. The other five
+  SKILL.md files and every non-SKILL.md file are byte-identical.
+- 25 directories gained the setgid bit (`755` → `2755`): the 12 managed skill directories
+  **and their 13 subdirectories**. No owner or group changed anywhere.
+- New tree `dev/claude/`: 42 files, 27 directories, 0 symlinks.
+  `drwxr-s--- 2750 cwang31:ps-users` for `claude/` and `claude/skills/`; the 12 skill
+  directories under it are `2755 cwang31:ps-users`. Its ACL is byte-identical to
+  `dev/opencode`. Content and modes match the opencode side exactly. No `claude/agents/`.
+- `dev/tools` untouched (rsync itemization empty). `commands/`, `opencode.json`, `agents/`
+  symlinks, `node_modules/`, and the three hand-managed skills (lcls-catalog 2750,
+  smartsheet 2750, token-usage 2775) all unchanged.
+- Audit command over `dev/opencode` and `dev/claude`: both empty — clean.
+
+**Backup / rollback.** `/tmp/mhr-predeploy/` (`opencode/`, `tools/`, 31,746-line
+`inventory.tsv`), taken with `rsync -aHAX` immediately pre-deploy. It lives on `/tmp` and is
+not durable.
+
+```sh
+rm -rf /sdf/group/lcls/ds/dm/apps/dev/claude
+rsync -aHAX --delete /tmp/mhr-predeploy/opencode/ /sdf/group/lcls/ds/dm/apps/dev/opencode/
+rsync -aHAX --delete /tmp/mhr-predeploy/tools/    /sdf/group/lcls/ds/dm/apps/dev/tools/
+```
+
+**Outstanding.**
+
+1. **The five cron skills need a MERGE to `main` upstream.** `fix/cron-chgrp-ps-users` was
+   pushed on skill-ask-{epics,nersc,s3df} only; skill-ask-{olcf,tiled} were held back because
+   their branch tip also flips the cron script's mode `100644` → `100755`, a behavioral change
+   beyond the chgrp fix. A pushed branch is invisible to `deploy.sh`, which clones the
+   manifest `ref` (`main`). Until the merge lands, those five stay refused — correctly.
+2. **The `2775`-on-fresh-creation finding is still latent.** `SKILLS_DST`/`AGENTS_DST`/
+   `TOOLS_DST` still lack the absolute-mode `ensure_*_root()` treatment `claude/` gets. Not
+   triggered here because `opencode/skills` already existed; it bites on a fresh `DEPLOY_ROOT`.
+3. **Skill invocation is still untested end to end.** Nothing has loaded a skill from either
+   `dev/opencode/skills/` or the new `dev/claude/skills/` since the deploy. Cron entries were
+   not installed; no crontab was touched.
