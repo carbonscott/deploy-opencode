@@ -376,9 +376,9 @@ Observed:
 
 ```
 clone rc=0
--rwxr-xr-x 1 <you> <grp> 34450 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
-792
-923f10da37c971cb5fe57f61dcbcbc98  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+-rwxr-xr-x 1 <you> <grp> 38005 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+856
+c2d2bb13756986d6967dab77f44b6941  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
 ```
 
 That the repo is genuinely public was re-checked two ways: `curl -s -o /dev/null
@@ -397,13 +397,13 @@ work was developed on has been deleted, so do not ask for it by name.
 Verify what you have before running it:
 
 ```bash
-wc -l install-claude-lcls.sh   # expect 792
-md5sum install-claude-lcls.sh  # expect 923f10da37c971cb5fe57f61dcbcbc98
+wc -l install-claude-lcls.sh   # expect 856
+md5sum install-claude-lcls.sh  # expect c2d2bb13756986d6967dab77f44b6941
 bash -n install-claude-lcls.sh # expect complete silence
 ```
 
-If you get 496 / `6cb70eec...` or 603 / `a8ca2089...` instead, you have a
-pre-merge installer. Re-clone from `main`.
+If you get 496 / `6cb70eec...`, 603 / `a8ca2089...` or 792 / `923f10da...`
+instead, you have an older installer. Re-clone from `main`.
 
 ---
 
@@ -424,13 +424,20 @@ bash /path/to/install-claude-lcls.sh --dry-run
 ### Expected output
 
 The following is **real captured output**, not a mock-up. It was produced on
-2026-08-28 on `sdfiana025` by `cwang31`, running the 792-line installer on
-`main` (md5 `923f10da37c971cb5fe57f61dcbcbc98`) against a **scratch `HOME` of
+2026-08-28 on `sdfiana025` by `cwang31`, running the installer on `main`
+against a **scratch `HOME` of
 `/tmp/ldr-gt/s2/home`** with `PATH=/usr/bin:/bin` — no personal Claude Code and
 no personal `uv` reachable at all, so every path named below is a shared one and
 the `Verification` step is a genuine live completion through the gateway, not a
 stub. Your paths will show your own `$HOME` instead of `/tmp/ldr-gt/s2/home`.
 Everything else should match line for line.
+
+Provenance, stated exactly: the capture below was taken from the 792-line
+installer (md5 `923f10da37c971cb5fe57f61dcbcbc98`) and then re-run against the
+current 856-line one (md5 `c2d2bb13756986d6967dab77f44b6941`) on 2026-08-28. The
+two runs agreed line for line, differing only in the scratch `HOME` path. That
+is expected: the change between them alters what the installer *writes* into
+`settings.json`, never what it *prints*.
 
 ```
 
@@ -508,7 +515,7 @@ from its path at runtime. Confirm that:
 cat ~/.claude-lcls/settings.json
 ```
 
-Expected — 688 bytes, md5 `f56a1e105ca59444baa66a1185c30864`. The two values
+Expected — 879 bytes, md5 `a7b07566071cd88175ef8c118ebcf6c7`. The two values
 that can change it are `KEY_FILE` and `BASE_URL`; both are at their defaults
 here. `LCLS_DIR` does not appear in the file at all, only in the path it is
 written to.
@@ -525,7 +532,8 @@ written to.
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_AUTOUPDATER": "1"
   },
 
   "skipWebFetchPreflight": true,
@@ -533,9 +541,57 @@ written to.
   "attribution": {
     "commit": "Generated with AI\n\nCo-Authored-By: SLAC AI",
     "pr": ""
-  }
+  },
+
+  "permissions": {
+    "defaultMode": "auto"
+  },
+
+  "tui": "fullscreen",
+  "verbose": false,
+  "showThinkingSummaries": false,
+  "autoMemoryEnabled": false
 }
 ```
+
+#### What the last six keys do, and why they are here
+
+`apiKeyHelper` and `env.ANTHROPIC_BASE_URL` are required — without them
+`claude-lcls` does not reach the gateway. Everything from `permissions` down is
+a **team default**: a preference, not a requirement, set so that everyone starts
+from the same behaviour instead of from whatever each Claude Code release
+happens to default to.
+
+| Key | Effect |
+| --- | --- |
+| `permissions.defaultMode: "auto"` | Claude classifies each action and prompts only for the ones that need a human. Only a **user-level** settings file may grant this; a repo-level one cannot. This file is the user-level one, because `CLAUDE_CONFIG_DIR` points at its directory. |
+| `tui: "fullscreen"` | The fullscreen renderer — what you would otherwise get by running `/tui fullscreen` every session. |
+| `verbose: false` | Truncated tool output rather than full. |
+| `showThinkingSummaries: false` | No API-side thinking summaries. |
+| `autoMemoryEnabled: false` | Claude neither reads nor writes the auto-memory directory. |
+| `env.DISABLE_AUTOUPDATER: "1"` | No self-update. Redundant today — `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` above already disables the updater — but it names the intent directly, so dropping the traffic flag later cannot silently re-enable updates of a binary you have no write access to. |
+
+`verbose` and `showThinkingSummaries` pin what 2.1.235 already defaults to. The
+other four change behaviour — auto-memory in particular is **on** unless the
+setting says otherwise.
+
+Two spellings are worth knowing, because both are easy to get wrong and neither
+failure is visible:
+
+* There is **no** `memory` object and **no** `autoMemory` key in the settings
+  schema. The real key is top-level `autoMemoryEnabled`. Checked against both
+  2.1.235 and 2.1.251.
+* There is **no** settings key for the auto-updater at all. `env.DISABLE_AUTOUPDATER`
+  is the supported control, and is literally what Claude Code's own settings
+  migration writes when a user turns auto-updates off. In 2.1.235 the updater
+  reports itself disabled for any of `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` — three names for one switch.
+
+Both matter because **Claude Code ignores unknown settings keys in silence** —
+no warning, no error, no effect. Measured: a settings file carrying a
+deliberately invented key ran a one-shot to completion with exit `0` and empty
+stderr. A near-miss spelling therefore looks exactly like a working one. If you
+edit this file, verify the behaviour changed rather than assuming the key took.
 
 ### 5.2 The skill symlinks
 
@@ -783,8 +839,11 @@ against a scratch `HOME` under `/tmp`, and the "what the script says" column is
 copied from that run. The rc-file rows came from the 693-line installer (md5
 `51440d603fd6353fc5d0212b05e653a6`); the three binary rows at the bottom came
 from the 792-line shared-binary installer (md5
-`923f10da37c971cb5fe57f61dcbcbc98`) on 2026-08-28. The rc-handling code is
-unchanged between the two, so the earlier rows still hold. Two rows could not be produced honestly, because `cwang31` **is** in
+`923f10da37c971cb5fe57f61dcbcbc98`) on 2026-08-28. Neither was produced by the
+current 856-line installer (md5 `c2d2bb13756986d6967dab77f44b6941`), and both
+still hold: the only change since is the team-defaults block written into
+`settings.json`, which touches neither the rc-handling code nor the binary
+resolution these rows exercise. Two rows could not be produced honestly, because `cwang31` **is** in
 `ps-users` and **is** on the SLAC network: the "Not in `ps-users`" row was
 forced with `KEY_FILE=/tmp/no-such-key.dat` and the "Off the SLAC network" row
 with `BASE_URL=https://127.0.0.1:9`. Both reach the identical code path, so the

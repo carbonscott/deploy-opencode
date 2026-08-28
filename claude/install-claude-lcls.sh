@@ -513,6 +513,60 @@ fi
 # ─── Write the config dir ─────────────────────────────────────────────────
 step "Config dir: $LCLS_DIR"
 
+# Two kinds of key live in this file and it is worth keeping them apart.
+#
+# REQUIRED. apiKeyHelper and env.ANTHROPIC_BASE_URL are what make claude-lcls
+# work at all; apiKeyHelper alone sends the SLAC key to api.anthropic.com and
+# comes back 401.
+#
+# TEAM DEFAULTS -- everything from "permissions" down. These are preferences,
+# not requirements: the wrapper works without them. They are set here so that
+# everyone starts from the same terminal behaviour rather than from whatever
+# each Claude Code release happens to default to.
+#
+#   permissions.defaultMode "auto"  Claude classifies each action and prompts
+#                                   only for the ones that need a human. Note
+#                                   that ONLY a user-level settings file may
+#                                   grant this -- a repo-level one cannot. This
+#                                   file is the user-level one, because
+#                                   CLAUDE_CONFIG_DIR points at its directory.
+#   tui "fullscreen"                the fullscreen renderer, i.e. what you would
+#                                   get by running /tui fullscreen every session.
+#   verbose false                   truncated tool output rather than full.
+#   showThinkingSummaries false     no API-side thinking summaries.
+#   autoMemoryEnabled false         Claude neither reads nor writes the
+#                                   auto-memory directory.
+#   env.DISABLE_AUTOUPDATER "1"     no self-update. Belt and braces: the updater
+#                                   is ALREADY off without it, because
+#                                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC a
+#                                   few lines up disables it too. Naming it
+#                                   directly means that dropping the traffic flag
+#                                   later cannot silently re-enable updates.
+#
+# verbose and showThinkingSummaries pin what 2.1.235 already defaults to; the
+# other three change behaviour. Auto-memory in particular is ON unless this
+# says otherwise.
+#
+# Two things measured against the 2.1.235 binary that are easy to get wrong:
+#
+#   1. There is no "memory" object and no "autoMemory" key in the settings
+#      schema. The real key is top-level "autoMemoryEnabled". Neither 2.1.235
+#      nor 2.1.251 has ever had the other spelling.
+#   2. There is no settings KEY for the auto-updater. env.DISABLE_AUTOUPDATER
+#      is the supported control -- it is literally what Claude Code's own
+#      settings migration writes when a user turns auto-updates off. In 2.1.235
+#      the updater gate reports itself disabled for any of DISABLE_UPDATES,
+#      DISABLE_AUTOUPDATER or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, so this
+#      deployment was already covered by the third; the entry is here to say so
+#      out loud. A shared read-only binary is not one a user could update anyway.
+#
+# Both matter more than they look, because Claude Code ignores unknown settings
+# keys in SILENCE. A near-miss spelling produces no warning, no error and no
+# effect, so it reads as working. Verified by installing a deliberately bogus
+# key and watching a one-shot exit 0 with empty stderr.
+#
+# A user who wants different values can edit this file, but re-running this
+# installer rewrites it -- so note any local change somewhere it will survive.
 read -r -d '' SETTINGS_JSON <<EOF || true
 {
   "\$schema": "https://json.schemastore.org/claude-code-settings.json",
@@ -525,7 +579,8 @@ read -r -d '' SETTINGS_JSON <<EOF || true
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_AUTOUPDATER": "1"
   },
 
   "skipWebFetchPreflight": true,
@@ -533,7 +588,16 @@ read -r -d '' SETTINGS_JSON <<EOF || true
   "attribution": {
     "commit": "Generated with AI\n\nCo-Authored-By: SLAC AI",
     "pr": ""
-  }
+  },
+
+  "permissions": {
+    "defaultMode": "auto"
+  },
+
+  "tui": "fullscreen",
+  "verbose": false,
+  "showThinkingSummaries": false,
+  "autoMemoryEnabled": false
 }
 EOF
 
