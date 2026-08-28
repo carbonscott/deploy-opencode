@@ -272,8 +272,8 @@
         "name": "elog-search",
         "kind": "skill",
         "slug": "elog-search",
-        "description_auto": "Search the LCLS eLog (pswww logbook) across experiments, read-only, using the invoking user's own S3DF token. Use when asked what the elog / logbook says about a topic, error, sample, detector or shift, or to find eLog entries by text, tag, run or date. Always reports which experiments it searched and why.",
-        "description_menu": "Search the LCLS eLog (pswww logbook) across experiments, read-only, using the invoking user's own S3DF token. Use when asked what the elog / logbook says about a topic, error, sample, detector or shift, or to find eLog entries by text, tag, run or date. Always reports which experiments it searched and why."
+        "description_auto": "Answer questions about LCLS experiments from the pswww logbook, read-only, using the invoking user's own S3DF token. Use when asked what the elog / logbook says about a topic, error, sample, detector or shift; and equally for which runs an experiment had, what a run's detector or DAQ parameters were, which files exist for a run, what samples were used, an image or PDF attached to an entry, or why an analysis job failed and what its log says. Always reports which experiments it searched and why.",
+        "description_menu": "Search the LCLS eLog read-only: entries, runs, DAQ parameters, files, samples, attachments and job logs."
       }
     }
   ]
