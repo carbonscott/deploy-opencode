@@ -376,9 +376,9 @@ Observed:
 
 ```
 clone rc=0
--rwxr-xr-x 1 <you> <grp> 29467 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
-693
-51440d603fd6353fc5d0212b05e653a6  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+-rwxr-xr-x 1 <you> <grp> 34450 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+792
+923f10da37c971cb5fe57f61dcbcbc98  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
 ```
 
 That the repo is genuinely public was re-checked two ways: `curl -s -o /dev/null
@@ -397,8 +397,8 @@ work was developed on has been deleted, so do not ask for it by name.
 Verify what you have before running it:
 
 ```bash
-wc -l install-claude-lcls.sh   # expect 693
-md5sum install-claude-lcls.sh  # expect 51440d603fd6353fc5d0212b05e653a6
+wc -l install-claude-lcls.sh   # expect 792
+md5sum install-claude-lcls.sh  # expect 923f10da37c971cb5fe57f61dcbcbc98
 bash -n install-claude-lcls.sh # expect complete silence
 ```
 
@@ -424,30 +424,33 @@ bash /path/to/install-claude-lcls.sh --dry-run
 ### Expected output
 
 The following is **real captured output**, not a mock-up. It was produced on
-2026-08-27 on `sdfiana025` by `cwang31`, running the 693-line installer on
-`main` (md5 `51440d603fd6353fc5d0212b05e653a6`) against a **scratch `HOME` of
-`/tmp/ldr-gt/s1b/home`** with the real `2.1.235` Claude Code binary symlinked
-onto a scratch `PATH` — so the `Verification` step is a genuine live completion
-through the gateway, not a stub. Your paths will show your own `$HOME` and your
-own binary instead of `/tmp/ldr-gt/s1b/home` and `/tmp/ldr-gt/s1b/bin/claude`.
+2026-08-28 on `sdfiana025` by `cwang31`, running the 792-line installer on
+`main` (md5 `923f10da37c971cb5fe57f61dcbcbc98`) against a **scratch `HOME` of
+`/tmp/ldr-gt/s2/home`** with `PATH=/usr/bin:/bin` — no personal Claude Code and
+no personal `uv` reachable at all, so every path named below is a shared one and
+the `Verification` step is a genuine live completion through the gateway, not a
+stub. Your paths will show your own `$HOME` instead of `/tmp/ldr-gt/s2/home`.
 Everything else should match line for line.
 
 ```
 
+
 ── Preflight
-  ✓ claude found: /tmp/ldr-gt/s1b/bin/claude (2.1.235 (Claude Code))
+  ✓ claude found: /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current (2.1.235 (Claude Code))
+  ✓ shared team binary, resolving to versions/2.1.235
+  ✓ shared tools on PATH: /sdf/group/lcls/ds/dm/apps/dev/bin (uv 0.9.8)
   ✓ key readable: /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat
   ✓ gateway reachable: https://ai-api.slac.stanford.edu (HTTP 200)
 
-── Config dir: /tmp/ldr-gt/s1b/home/.claude-lcls
-  ✓ wrote /tmp/ldr-gt/s1b/home/.claude-lcls/settings.json (mode 600)
+── Config dir: /tmp/ldr-gt/s2/home/.claude-lcls
+  ✓ wrote /tmp/ldr-gt/s2/home/.claude-lcls/settings.json (mode 600)
   ✓ no key is stored — apiKeyHelper reads it from /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat at runtime
 
 ── Shared skills: /sdf/group/lcls/ds/dm/apps/dev/claude/skills
-  ✓ linked 17 shared skill(s) into /tmp/ldr-gt/s1b/home/.claude-lcls/skills
+  ✓ linked 17 shared skill(s) into /tmp/ldr-gt/s2/home/.claude-lcls/skills
 
 ── Shell function: claude-lcls()
-  ✓ appended to /tmp/ldr-gt/s1b/home/.bashrc
+  ✓ appended to /tmp/ldr-gt/s2/home/.bashrc
 
 ── Verification
   ✓ live completion succeeded through https://ai-api.slac.stanford.edu
@@ -456,20 +459,18 @@ Done. Start a new shell (or: source ~/.bashrc), then:
 
     claude-lcls                       # interactive, SLAC gateway
     claude-lcls -p 'hello'            # one-shot
-    claude                           # your own setup, unchanged
-
-```
+    claude                           # your own setup, unchanged```
 
 Exit status `0`.
 
-That is **eight** `✓` lines. Things that will legitimately differ for you:
+That is **ten** `✓` lines. Things that will legitimately differ for you:
 
 * `✓ appended to ...` becomes `✓ refreshed in ...` on any re-run.
 * If you have both a `~/.bashrc` and a `~/.zshrc`, you get one `appended`/
   `refreshed` line per file. If you have neither, the script creates `~/.bashrc`.
 * If you already have a `~/.claude/settings.json`, Preflight prints one extra
   line — `✓ your existing ~/.claude/settings.json will NOT be modified` — for
-  nine `✓` lines instead of eight. The scratch `HOME` used above had none.
+  eleven `✓` lines instead of ten. The scratch `HOME` used above had none.
 
 Preflight also prints a second binary line —
 `✓ shared team binary, resolving to versions/<ver>` — naming the version
@@ -777,10 +778,13 @@ new one.
 
 ## 8. Known-good vs known-bad
 
-Every row below was produced by actually running the 693-line `main` installer
-(md5 `51440d603fd6353fc5d0212b05e653a6`) on `sdfiana025` against a scratch
-`HOME` under `/tmp`, and the "what the script says" column is copied from that
-run. Two rows could not be produced honestly, because `cwang31` **is** in
+Every row below was produced by actually running the installer on `sdfiana025`
+against a scratch `HOME` under `/tmp`, and the "what the script says" column is
+copied from that run. The rc-file rows came from the 693-line installer (md5
+`51440d603fd6353fc5d0212b05e653a6`); the three binary rows at the bottom came
+from the 792-line shared-binary installer (md5
+`923f10da37c971cb5fe57f61dcbcbc98`) on 2026-08-28. The rc-handling code is
+unchanged between the two, so the earlier rows still hold. Two rows could not be produced honestly, because `cwang31` **is** in
 `ps-users` and **is** on the SLAC network: the "Not in `ps-users`" row was
 forced with `KEY_FILE=/tmp/no-such-key.dat` and the "Off the SLAC network" row
 with `BASE_URL=https://127.0.0.1:9`. Both reach the identical code path, so the
