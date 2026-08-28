@@ -49,6 +49,9 @@ VERSIONS_DIR="$CLAUDE_BIN_ROOT/versions"
 CURRENT_LINK="$CLAUDE_BIN_ROOT/current"
 VERSIONS_JSON="$CLAUDE_BIN_ROOT/VERSIONS.json"
 INSTALLER_SRC="$CLAUDE_BINARY_SRC_REPO/claude/install-claude-lcls.sh"
+# What a published installer SHOULD equal is what this ref holds, not whatever
+# happens to be checked out in the source repo. See cmd_verify.
+INSTALLER_REF="${INSTALLER_REF:-origin/main}"
 INSTALLER_DST="$CLAUDE_TREE_ROOT/install-claude-lcls.sh"
 
 log()  { echo "$(date '+%Y-%m-%d %H:%M:%S') - $*"; }
@@ -450,9 +453,34 @@ cmd_verify() {
         printf '  %-52s %s %s md5 %s\n' "$INSTALLER_DST" \
             "$(stat -c %a "$INSTALLER_DST")" "$(stat -c %G "$INSTALLER_DST")" \
             "$(md5sum "$INSTALLER_DST" | cut -d' ' -f1)"
-        if [[ -f "$INSTALLER_SRC" ]]; then
-            [[ "$(md5sum "$INSTALLER_DST" | cut -d' ' -f1)" == "$(md5sum "$INSTALLER_SRC" | cut -d' ' -f1)" ]] \
-                || { fail "published installer differs from $INSTALLER_SRC"; rc=1; }
+        # Compare against $INSTALLER_REF, not against the working tree.
+        # CLAUDE_BINARY_SRC_REPO is a SHARED checkout that more than one session
+        # uses, so it frequently sits on a feature branch, and the file there is
+        # then not what was published and not what anyone intends to publish.
+        #
+        # Observed 2026-08-28: verify reported "published installer differs"
+        # purely because another session had a branch checked out there, while
+        # the published copy was byte-identical to origin/main. The old message
+        # named a path without saying it was reading a working tree, which is
+        # what made the false alarm convincing.
+        #
+        # `cat-file -e` is the existence check; `show | md5sum` then streams the
+        # blob, so no trailing-newline round trip through a shell variable. The
+        # ref's short SHA is printed because a LOCAL origin/main can be stale,
+        # and a stale comparison should be diagnosable rather than mysterious.
+        local want_md5="" want_desc="" ref_sha=""
+        if git -C "$CLAUDE_BINARY_SRC_REPO" cat-file -e "$INSTALLER_REF:claude/install-claude-lcls.sh" 2>/dev/null; then
+            want_md5="$(git -C "$CLAUDE_BINARY_SRC_REPO" show "$INSTALLER_REF:claude/install-claude-lcls.sh" | md5sum | cut -d' ' -f1)"
+            ref_sha="$(git -C "$CLAUDE_BINARY_SRC_REPO" rev-parse --short "$INSTALLER_REF" 2>/dev/null || echo '?')"
+            want_desc="$INSTALLER_REF ($ref_sha)"
+        elif [[ -f "$INSTALLER_SRC" ]]; then
+            want_md5="$(md5sum "$INSTALLER_SRC" | cut -d' ' -f1)"
+            want_desc="working tree $INSTALLER_SRC (could not read $INSTALLER_REF -- may be any branch)"
+        fi
+        if [[ -n "$want_md5" ]]; then
+            echo "  compared against: $want_desc"
+            [[ "$(md5sum "$INSTALLER_DST" | cut -d' ' -f1)" == "$want_md5" ]] \
+                || { fail "published installer differs from $want_desc"; rc=1; }
         fi
     fi
 
