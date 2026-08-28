@@ -222,18 +222,48 @@ claude-lcls() {
     echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
     return 127
   fi
-  CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" "$_bin" "$@"
+  local _path="$PATH"
+  case ":$_path:" in
+    *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*) ;;
+    *) _path="$_path:/sdf/group/lcls/ds/dm/apps/dev/bin" ;;
+  esac
+  PATH="$_path" CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" "$_bin" "$@"
 }
 ```
 
 This is what `install-claude-lcls.sh` writes for you; the manual form is here
 only for people who would rather not run the installer.
 
-Two details are deliberate. `bin/current` is resolved **at call time**, not
+Three details are deliberate. `bin/current` is resolved **at call time**, not
 frozen into the function, so a version bump or rollback on the deploy side
-reaches you with nothing to re-run. And there is no fallback to `command claude`
-or to `~/.local/share/claude/versions/*` — see
-[The shared binary](#the-shared-binary) for why.
+reaches you with nothing to re-run. There is no fallback to `command claude` or
+to `~/.local/share/claude/versions/*` — see
+[The shared binary](#the-shared-binary) for why. And the shared tools directory
+is **appended** to `PATH` — see below.
+
+### Shared tools on `PATH` (this is where `uv` comes from)
+
+Several deployed skills — `confluence-search`, `ask-slac-ai-tools` — shell out to
+a bare `uv run` on a PEP 723 inline-metadata script. Nothing on S3DF puts `uv` on
+`PATH` by default, and no skill's `env.sh` adds it: they only add their own
+`bin/`. So whether those skills worked came down to whether you happened to have
+installed `uv` yourself.
+
+`claude-lcls` now appends `/sdf/group/lcls/ds/dm/apps/dev/bin` to `PATH` for its
+own sessions, which is where the team `uv` lives (0.9.8, world-executable).
+
+**Appended, not prepended.** If you already have your own `uv`, it still wins.
+This only fills a gap; it never overrides a choice you made. Verified both ways:
+from an environment with no `uv` at all, `claude-lcls` resolves
+`/sdf/group/lcls/ds/dm/apps/dev/bin/uv` and runs a PEP 723 script successfully;
+with a `uv` earlier on `PATH`, that one is used instead.
+
+The `PATH` change is scoped to the `claude-lcls` command. Your interactive shell
+is not modified, and the guard means nesting `claude-lcls` does not repeat the
+entry.
+
+Skills that use `uv` set their own per-user `UV_CACHE_DIR` (`/tmp/uv-cache-$USER`)
+in their `env.sh`, so nothing writes to a shared cache.
 
 **3. Use them independently:**
 

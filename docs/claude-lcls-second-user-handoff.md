@@ -603,10 +603,20 @@ claude-lcls() {
         echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
+    local _path="$PATH"
+    case ":$_path:" in
+        *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*) ;;
+        *) _path="$_path:/sdf/group/lcls/ds/dm/apps/dev/bin" ;;
+    esac
+    PATH="$_path" CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
 }
 # <<< claude-lcls <<<
 ```
+
+The `PATH` line appends the shared team tools directory, which is where `uv`
+lives. Several skills call a bare `uv run`, and nothing on S3DF puts `uv` on
+`PATH` by default. Appended rather than prepended, so your own `uv` still wins
+if you have one.
 
 > **Changed 2026-08-28.** This block used to resolve a binary through
 > `command -v claude` and then `$HOME/.local/share/claude/versions/*`. It no

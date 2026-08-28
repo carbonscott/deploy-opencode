@@ -18,6 +18,11 @@
 # sessions and transcripts included. Nothing is shared between users except the
 # read-only binary and the read-only skills.
 #
+# claude-lcls also appends the shared team tools directory
+# (/sdf/group/lcls/ds/dm/apps/dev/bin, where `uv` lives) to PATH for its own
+# sessions only, so skills that shell out to `uv run` work without you
+# installing uv. Appended, so your own uv still takes precedence.
+#
 # Usage:
 #   ./install-claude-lcls.sh              # install (safe to re-run)
 #   ./install-claude-lcls.sh --uninstall  # remove it again
@@ -43,6 +48,18 @@ DRY_RUN="${DRY_RUN:-0}"
 # and no action from you. Never resolve this to a pinned version: the whole
 # point is that the deployment decides which version everyone runs.
 SHARED_BIN="${SHARED_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
+
+# Shared team tools, APPENDED to PATH inside claude-lcls sessions. This is where
+# `uv` lives, and several deployed skills (confluence-search, ask-slac-ai-tools)
+# call a bare `uv run` on a PEP 723 script. Nothing on S3DF puts this directory
+# on PATH by default and no skill's env.sh adds it, so a ps-users member without
+# a PERSONAL uv install had no uv at all -- while someone who happened to have
+# one silently did. That difference is exactly the kind of thing a centralized
+# deployment exists to remove.
+#
+# APPENDED, not prepended, on purpose: a user who already has their own uv keeps
+# it. This only fills a gap, it never overrides a choice someone made.
+SHARED_TOOLS_BIN="${SHARED_TOOLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/bin}"
 
 # Escape hatch, opt-in only. Set CLAUDE_LCLS_BIN to run claude-lcls against some
 # other binary — testing this script, or pinning an older version during an
@@ -453,6 +470,16 @@ if [ "$CLAUDE_BIN" = "$SHARED_BIN" ] && [ -L "$SHARED_BIN" ]; then
   ok "shared team binary, resolving to $(readlink "$SHARED_BIN")"
 fi
 
+# Shared tools are a convenience, not a requirement -- most skills do not need
+# uv, and the wrapper still works without it. So this warns and continues rather
+# than dying, unlike the binary and the key.
+if [ -x "$SHARED_TOOLS_BIN/uv" ]; then
+  ok "shared tools on PATH: $SHARED_TOOLS_BIN (uv $("$SHARED_TOOLS_BIN/uv" --version 2>/dev/null | awk '{print $2}'))"
+else
+  warn "shared tools dir has no runnable uv: $SHARED_TOOLS_BIN"
+  warn "skills that call 'uv run' will fail unless you have your own uv on PATH"
+fi
+
 [ -r "$KEY_FILE" ] || {
   echo "  ✗ cannot read $KEY_FILE" >&2
   echo >&2
@@ -623,7 +650,15 @@ $FUNC_NAME() {
         echo "$FUNC_NAME: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
+    # Shared team tools (uv, docs-index) appended to PATH, so skills that call a
+    # bare \`uv run\` work whether or not you have your own uv. Appended, so your
+    # own uv still wins. Guarded, so nesting claude-lcls does not repeat it.
+    local _path="\$PATH"
+    case ":\$_path:" in
+        *":$SHARED_TOOLS_BIN:"*) ;;
+        *) _path="\$_path:$SHARED_TOOLS_BIN" ;;
+    esac
+    PATH="\$_path" CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
 }
 $MARK_END
 EOF
