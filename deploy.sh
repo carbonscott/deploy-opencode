@@ -540,6 +540,31 @@ deploy_skill() {
   # The branch/tag arms below are byte-for-byte what this script always did;
   # SHA refs get their own arms because neither `clone -b <sha>` nor
   # `origin/<sha>` exists.
+  #
+  # Before either arm: a stage is keyed on the skill NAME, not on the repo, and
+  # the reuse arm below fetches from the stage's OWN origin. So when an entry's
+  # `repo` changes, the cached clone of the OLD repo is silently reused and
+  # reset to the old repo's ref.
+  #
+  # Verified 2026-08-28: after elog-copilot moved from carbonscott/deploy-opencode
+  # to carbonscott/skill-elog-copilot, a stale stage was refreshed to
+  # deploy-opencode main and the run died with "harness.source
+  # 'claude/skills/elog-copilot' is not a directory in this repo". That failure
+  # was loud only because the path happened to be absent in the wrong repo. A
+  # wrong repo whose layout still matched would have deployed the WRONG CONTENT
+  # with every check passing, which is the case this guard actually exists for.
+  #
+  # So discard a stage whose origin is not the repo this entry names and let the
+  # clone arm rebuild it. `git remote get-url` needs git >= 2.7 (host: 2.43.7).
+  if [ -d "$stage/.git" ]; then
+    local stage_origin
+    stage_origin="$(git -C "$stage" remote get-url origin 2>/dev/null || true)"
+    if [ "$stage_origin" != "git@github.com:$repo.git" ]; then
+      echo "  stage came from ${stage_origin:-an unknown origin}, not git@github.com:$repo.git — discarding it"
+      rm -rf "$stage"
+    fi
+  fi
+
   if [ -d "$stage/.git" ]; then
     if is_sha_ref "$ref"; then
       # `git fetch --depth=1 origin <sha>` is served by GitHub
