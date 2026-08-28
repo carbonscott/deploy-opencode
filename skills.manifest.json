@@ -275,6 +275,21 @@
         "description_auto": "Answer questions about LCLS experiments from the pswww logbook, read-only, using the invoking user's own S3DF token. Use when asked what the elog / logbook says about a topic, error, sample, detector or shift; and equally for which runs an experiment had, what a run's detector or DAQ parameters were, which files exist for a run, what samples were used, an image or PDF attached to an entry, or why an analysis job failed and what its log says. Always reports which experiments it searched and why.",
         "description_menu": "Search the LCLS eLog read-only: entries, runs, DAQ parameters, files, samples, attachments and job logs."
       }
+    },
+    {
+      "name": "elog-copilot",
+      "repo": "carbonscott/deploy-opencode",
+      "ref": "main",
+      "cron": null,
+      "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/elog-copilot",
+      "harness": {
+        "source": "claude/skills/elog-copilot",
+        "name": "elog-copilot",
+        "kind": "skill",
+        "slug": "elog-copilot",
+        "description_auto": "Autonomous SQL assistant for researchers analyzing LCLS experiment elog data in SQLite. Executes queries via sqlite3, answers database questions, and handles LCLS-specific concepts (run numbers, experiments, questionnaires, detectors, workflows, logbook entries). Use when users ask about LCLS experiments, run data, detector configurations, sample information, logbook entries, analysis workflows, or any question answerable from the elog database. Reads a shared database restricted to the ps-data and ps-agent groups; if it is not readable, say so plainly and suggest elog-search, which works for every ps-users member.",
+        "description_menu": "Query the shared LCLS elog SQLite database with SQL. Restricted to ps-data and ps-agent members."
+      }
     }
   ]
 }

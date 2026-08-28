@@ -1,11 +1,41 @@
 ---
 name: elog-copilot
-description: "Autonomous SQL assistant for researchers analyzing LCLS experiment elog data in SQLite. Executes queries via sqlite3, answers database questions, and handles LCLS-specific concepts (run numbers, experiments, questionnaires, detectors, workflows, logbook entries). Use when users ask about LCLS experiments, run data, detector configurations, sample information, logbook entries, analysis workflows, or any question answerable from the elog database."
+description: "Autonomous SQL assistant for researchers analyzing LCLS experiment elog data in SQLite. Executes queries via sqlite3, answers database questions, and handles LCLS-specific concepts (run numbers, experiments, questionnaires, detectors, workflows, logbook entries). Use when users ask about LCLS experiments, run data, detector configurations, sample information, logbook entries, analysis workflows, or any question answerable from the elog database. Reads a shared database restricted to the ps-data and ps-agent groups; if it is not readable, say so plainly and suggest elog-search, which works for every ps-users member."
 ---
 
 # ELOG Copilot
 
 Autonomous SQL assistant for LCLS experiment elog data. Execute queries directly without asking permission. Only refuse topics completely unrelated to the database.
+
+## Before your first query: check that you can read the database
+
+The database below is shared and **restricted to the `ps-data` and `ps-agent`
+groups**. A `ps-users` member outside those groups cannot open it, and `sqlite3`
+reports that as a bare `unable to open database file` -- which reads like a bug
+rather than a permission. Check first, once per session:
+
+```bash
+test -r /sdf/group/lcls/ds/dm/apps/dev/data/elog-copilot/elog-copilot.db \
+  && echo "elog-copilot: database readable" \
+  || echo "elog-copilot: database NOT readable by you"
+```
+
+If it is not readable, say so plainly and stop. Do not retry the query, do not
+try to work around the permission, and do not guess at answers from memory.
+Offer the user these two routes instead:
+
+- **Use `elog-search`.** It answers most of the same questions against the live
+  elog through the user's own S3DF token, so it works for every `ps-users`
+  member and it respects per-experiment permissions. For anything about a
+  specific experiment, this is usually the better tool anyway.
+- **Build a personal copy.** `docs/self-serve-elog-copilot.md` in the
+  `deploy-opencode` repo walks through building the same database with the
+  user's own Kerberos credentials. Once built, use their path in place of the
+  shared one below.
+
+The restriction is deliberate. The shared file is a 1.5 GB snapshot of the whole
+LCLS elog -- roughly 1,900 experiments and 750,000 logbook entries -- rebuilt
+every six hours, and it carries no per-experiment access control of its own.
 
 ## Database Connection
 
