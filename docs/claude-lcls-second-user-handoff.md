@@ -376,9 +376,9 @@ Observed:
 
 ```
 clone rc=0
--rwxr-xr-x 1 <you> <grp> 38005 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
-856
-c2d2bb13756986d6967dab77f44b6941  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+-rwxr-xr-x 1 <you> <grp> 39286 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+876
+8af7323f02dc36b7be91490e3a7375ba  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
 ```
 
 That the repo is genuinely public was re-checked two ways: `curl -s -o /dev/null
@@ -397,13 +397,13 @@ work was developed on has been deleted, so do not ask for it by name.
 Verify what you have before running it:
 
 ```bash
-wc -l install-claude-lcls.sh   # expect 856
-md5sum install-claude-lcls.sh  # expect c2d2bb13756986d6967dab77f44b6941
+wc -l install-claude-lcls.sh   # expect 876
+md5sum install-claude-lcls.sh  # expect 8af7323f02dc36b7be91490e3a7375ba
 bash -n install-claude-lcls.sh # expect complete silence
 ```
 
-If you get 496 / `6cb70eec...`, 603 / `a8ca2089...` or 792 / `923f10da...`
-instead, you have an older installer. Re-clone from `main`.
+If you get 496 / `6cb70eec...`, 603 / `a8ca2089...`, 792 / `923f10da...` or
+856 / `c2d2bb13...` instead, you have an older installer. Re-clone from `main`.
 
 ---
 
@@ -434,7 +434,7 @@ Everything else should match line for line.
 
 Provenance, stated exactly: the capture below was taken from the 792-line
 installer (md5 `923f10da37c971cb5fe57f61dcbcbc98`) and then re-run against the
-current 856-line one (md5 `c2d2bb13756986d6967dab77f44b6941`) on 2026-08-28. The
+current 876-line one (md5 `8af7323f02dc36b7be91490e3a7375ba`) on 2026-08-28. The
 two runs agreed line for line, differing only in the scratch `HOME` path. That
 is expected: the change between them alters what the installer *writes* into
 `settings.json`, never what it *prints*.
@@ -515,7 +515,7 @@ from its path at runtime. Confirm that:
 cat ~/.claude-lcls/settings.json
 ```
 
-Expected — 879 bytes, md5 `a7b07566071cd88175ef8c118ebcf6c7`. The two values
+Expected — 1112 bytes, md5 `ac5941576b46489d51d7ee7caacb443b`. The two values
 that can change it are `KEY_FILE` and `BASE_URL`; both are at their defaults
 here. `LCLS_DIR` does not appear in the file at all, only in the path it is
 written to.
@@ -531,6 +531,9 @@ written to.
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "us.anthropic.claude-sonnet-4-6",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Sonnet 4.6",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "Previous Sonnet, kept selectable via the SLAC gateway",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "DISABLE_AUTOUPDATER": "1"
@@ -553,6 +556,31 @@ written to.
   "autoMemoryEnabled": false
 }
 ```
+
+#### Which models you get
+
+The three `ANTHROPIC_DEFAULT_*_MODEL` entries map Claude Code's `opus`, `sonnet`
+and `haiku` aliases onto the Bedrock ids the SLAC gateway serves. So `/model
+opus` gives you **Opus 5** and `/model sonnet` gives you **Sonnet 5** — those are
+the defaults, and neither is Claude Code's own default choice, they are this
+deployment's.
+
+The gateway serves more than three Anthropic models. Measured on 2026-08-28, it
+lists Opus 5, Opus 4.8, Opus 4.7, Opus 4.6, Sonnet 5, Sonnet 4.6 and Haiku 4.5,
+alongside a number of non-Anthropic models. An alias can only point at one id,
+so the rest are reachable in two ways:
+
+* **`ANTHROPIC_CUSTOM_MODEL_OPTION`** adds one extra entry to the `/model`
+  picker. Claude Code appends it to the list rather than replacing anything,
+  labelled by `_NAME` and subtitled by `_DESCRIPTION`. There is exactly one such
+  slot — no numbered second one — and it is spent on **Sonnet 4.6**.
+* **`--model` with a full id** reaches anything the gateway serves without using
+  the slot, e.g. `claude-lcls --model us.anthropic.claude-opus-4-8`.
+
+Four ids were checked against the live gateway on 2026-08-28 and each returned a
+completion at exit 0: `us.anthropic.claude-opus-5[1m]`,
+`us.anthropic.claude-sonnet-5`, `us.anthropic.claude-sonnet-4-6` and
+`us.anthropic.claude-opus-4-8`.
 
 #### What the last six keys do, and why they are here
 
@@ -840,7 +868,7 @@ copied from that run. The rc-file rows came from the 693-line installer (md5
 `51440d603fd6353fc5d0212b05e653a6`); the three binary rows at the bottom came
 from the 792-line shared-binary installer (md5
 `923f10da37c971cb5fe57f61dcbcbc98`) on 2026-08-28. Neither was produced by the
-current 856-line installer (md5 `c2d2bb13756986d6967dab77f44b6941`), and both
+current 876-line installer (md5 `8af7323f02dc36b7be91490e3a7375ba`), and both
 still hold: the only change since is the team-defaults block written into
 `settings.json`, which touches neither the rc-handling code nor the binary
 resolution these rows exercise. Two rows could not be produced honestly, because `cwang31` **is** in

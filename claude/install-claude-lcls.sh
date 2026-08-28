@@ -536,6 +536,23 @@ step "Config dir: $LCLS_DIR"
 #   showThinkingSummaries false     no API-side thinking summaries.
 #   autoMemoryEnabled false         Claude neither reads nor writes the
 #                                   auto-memory directory.
+# MODEL WIRING. The three ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
+# opus / sonnet / haiku aliases onto the Bedrock ids the SLAC gateway serves, so
+# /model opus selects Opus 5 and /model sonnet selects Sonnet 5. The gateway
+# offers more than those three -- Opus 4.8, 4.7, 4.6 and Sonnet 4.6 are all live
+# on it -- but an alias can only point at one id.
+#
+# ANTHROPIC_CUSTOM_MODEL_OPTION is how anything else reaches the picker. Claude
+# Code APPENDS it to the model list rather than replacing an entry, using
+# _NAME as the label and _DESCRIPTION as the subtitle. It is a SINGLE slot:
+# there is no numbered second one, so exactly one extra model can be offered and
+# Sonnet 4.6 is the one chosen. Anyone needing a different one can still name it
+# explicitly with `claude-lcls --model us.anthropic.claude-opus-4-8`; the slot
+# only decides what appears in the menu without being typed.
+#
+# All four ids were answered by the gateway on 2026-08-28: opus-5[1m],
+# sonnet-5, sonnet-4-6 and opus-4-8 each returned a completion, exit 0.
+#
 #   env.DISABLE_AUTOUPDATER "1"     no self-update. Belt and braces: the updater
 #                                   is ALREADY off without it, because
 #                                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC a
@@ -578,6 +595,9 @@ read -r -d '' SETTINGS_JSON <<EOF || true
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "us.anthropic.claude-sonnet-4-6",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Sonnet 4.6",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "Previous Sonnet, kept selectable via the SLAC gateway",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "DISABLE_AUTOUPDATER": "1"
