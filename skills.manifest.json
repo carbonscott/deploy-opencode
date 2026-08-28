@@ -278,7 +278,7 @@
     },
     {
       "name": "elog-copilot",
-      "repo": "carbonscott/deploy-opencode",
+      "repo": "carbonscott/skill-elog-copilot",
       "ref": "main",
       "cron": null,
       "central_data": "/sdf/group/lcls/ds/dm/apps/dev/data/elog-copilot",
