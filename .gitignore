@@ -23,3 +23,9 @@ claude/skills/ask-s3df/
 claude/skills/ask-epics/
 claude/skills/ask-nersc/
 claude/skills/ask-olcf/
+
+# Shared Claude Code binary — published by tools/claude-binary, never committed.
+# This repo has never carried binaries and must not start: a 330 MB blob in git
+# history is permanent. Every published version is reproducible from its version
+# number and SHA-256 in the deployed claude/bin/VERSIONS.json.
+claude/bin/

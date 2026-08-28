@@ -46,6 +46,9 @@ Running it as you is the only thing that really tests two claims:
 * Membership in the `ps-users` group (gid 10000).
 * A shell on an S3DF interactive node. The reference host for everything below
   is `sdfiana025`.
+* **No Claude Code install.** Since 2026-08-28 the binary is deployed for
+  `ps-users` and `claude-lcls` runs that one. If you already have your own, it
+  is left alone and never read.
 * The SLAC network or the SLAC VPN. The gateway `https://ai-api.slac.stanford.edu`
   does not answer from outside it, and the installer refuses to proceed when it
   cannot reach it.
@@ -251,66 +254,78 @@ Both files do carry `other::r--`, but that is not how you reach them — every
 directory above them is `drwxr-s---`, so `ps-users` membership is still what
 gets you in.
 
-### 2.4 Confirm you have a `claude` binary
+### 2.4 Confirm you can run the shared binary
 
-The installer needs a runnable Claude Code binary. It looks for `claude` on
-`PATH` first, and falls back to the newest versioned binary under
-`$HOME/.local/share/claude/versions`.
-
-```bash
-command -v claude || echo "(no claude on PATH)"
-ls -d "$HOME"/.local/share/claude/versions/* 2>/dev/null | sort -V | tail -1
-```
-
-Either line producing a path is enough. A concrete example — on `sdfiana025`
-today `cwang31` has **no** shim on `PATH` and only the versioned binaries:
-
-```
-(no claude on PATH)
-/sdf/home/c/cwang31/.local/share/claude/versions/2.1.235
-```
-
-Confirm whichever one you found actually runs:
+**You do not need to install Claude Code.** Since 2026-08-28 the binary is
+deployed for `ps-users` and `claude-lcls` runs that one and only that one. A
+personal install is never read — not as a fallback, not at all.
 
 ```bash
-"$(command -v claude || ls -d "$HOME"/.local/share/claude/versions/* | sort -V | tail -1)" --version
+ls -l /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current
+/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current --version
 ```
 
 Expected shape:
 
 ```
+lrwxrwxrwx 1 cwang31 ps-users 16 Aug 28 10:33 .../bin/current -> versions/2.1.235
 2.1.235 (Claude Code)
 ```
 
-If both lines come up empty, install Claude Code first. The installer will stop
-with `no 'claude' on PATH and no versioned binary under ...` and write nothing.
+If the first command says permission denied or no such file, you are probably
+not in `ps-users` — re-check §2.1. That is the same root cause as an unreadable
+key file, and it has the same remedy: ask for `ps-users` membership. **Do not
+work around it by installing Claude Code into your home directory**; the
+installer does not use a personal install, so it would change nothing.
+
+> **This is the check the publisher cannot run.** cwang31 is in `ps-data` as well
+> as `ps-users`, so a successful run there does not prove a `ps-users`-only
+> member can reach the tree. The ACLs say you can. You running the two commands
+> above is what turns that from inference into fact — please report the result
+> either way.
+
+If you already have your own `claude`, it stays exactly as it is. It keeps using
+your own install and your own `~/.claude/`. Nothing here touches it.
 
 ---
 
 ## 3. How to obtain the installer
 
-Three candidate routes were checked on the host. **Only one works for you
-today.**
+Three candidate routes were checked on the host. **Route A is the one to use.**
+It was the broken one when this document was first written; publishing the
+installer to the shared tree on 2026-08-28 fixed it.
 
-### Route A — the shared read-only tree: DOES NOT WORK
+### Route A — the shared read-only tree: **THIS IS NOW THE EASY ONE**
 
-`/sdf/group/lcls/ds/dm/apps/dev/claude/` is the deployed tree you can read, and
-it contains **only** `skills/`:
+> **Changed 2026-08-28.** This section used to read "DOES NOT WORK", because at
+> the time it was written the installer had not been published to the shared
+> tree and that campaign was forbidden from writing there. Both facts have since
+> changed. Route A is now the recommended route and needs no clone.
+
+The installer and the binary are both published under
+`/sdf/group/lcls/ds/dm/apps/dev/claude/`, readable by `ps-users`:
 
 ```
 $ ls -l /sdf/group/lcls/ds/dm/apps/dev/claude/
-total 0
-drwxr-s---+ 1 cwang31 ps-users 0 Aug 27 00:15 skills
+drwxr-sr-x+ 1 cwang31 ps-users     0 Aug 28 10:33 bin
+-rwxr-xr-x+ 1 cwang31 ps-users 32519 Aug 28 10:39 install-claude-lcls.sh
+drwxr-s---+ 1 cwang31 ps-users     0 Aug 27 00:15 skills
 ```
 
-```
-$ find /sdf/group/lcls/ds/dm/apps/dev -name 'install-claude-lcls*'
-(no output — the whole deploy root was searched, not just claude/)
+Run it straight from there — it is mode `0755`, so you can read and execute it
+without copying anything:
+
+```bash
+/sdf/group/lcls/ds/dm/apps/dev/claude/install-claude-lcls.sh --dry-run
+/sdf/group/lcls/ds/dm/apps/dev/claude/install-claude-lcls.sh
 ```
 
-The installer is not published there. Nothing under
-`/sdf/group/lcls/ds/dm/apps/` may be written during this campaign, so it will
-not appear there as part of this exercise either.
+`bin/` beside it holds the shared Claude Code binary (see §2.4). The published
+installer is kept byte-identical to the repo copy by
+`tools/claude-binary/scripts/publish-claude-binary.sh installer`, so this is not
+a stale hand-copy that drifts.
+
+Routes B and C below are kept for the record and as fallbacks.
 
 ### Route B — cwang31's repo directory on disk: DOES NOT WORK for you
 
@@ -347,7 +362,7 @@ If you *are* in one of `ps-data` / `ps-prj` / `prjdat21`, this route works and
 you can just run the script in place. Check with `id -nG`. Most `ps-users`
 members are not.
 
-### Route C — clone from GitHub: THIS IS THE ONE THAT WORKS
+### Route C — clone from GitHub: works, but no longer necessary
 
 The repo is **public**: `https://github.com/carbonscott/deploy-opencode`. An
 anonymous HTTPS clone was tested from `sdfiana025` and succeeded:
@@ -361,9 +376,9 @@ Observed:
 
 ```
 clone rc=0
--rwxr-xr-x 1 <you> <grp> 29467 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
-693
-51440d603fd6353fc5d0212b05e653a6  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+-rwxr-xr-x 1 <you> <grp> 34450 <date> /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
+792
+923f10da37c971cb5fe57f61dcbcbc98  /tmp/claude-lcls-clone/claude/install-claude-lcls.sh
 ```
 
 That the repo is genuinely public was re-checked two ways: `curl -s -o /dev/null
@@ -382,8 +397,8 @@ work was developed on has been deleted, so do not ask for it by name.
 Verify what you have before running it:
 
 ```bash
-wc -l install-claude-lcls.sh   # expect 693
-md5sum install-claude-lcls.sh  # expect 51440d603fd6353fc5d0212b05e653a6
+wc -l install-claude-lcls.sh   # expect 792
+md5sum install-claude-lcls.sh  # expect 923f10da37c971cb5fe57f61dcbcbc98
 bash -n install-claude-lcls.sh # expect complete silence
 ```
 
@@ -409,30 +424,33 @@ bash /path/to/install-claude-lcls.sh --dry-run
 ### Expected output
 
 The following is **real captured output**, not a mock-up. It was produced on
-2026-08-27 on `sdfiana025` by `cwang31`, running the 693-line installer on
-`main` (md5 `51440d603fd6353fc5d0212b05e653a6`) against a **scratch `HOME` of
-`/tmp/ldr-gt/s1b/home`** with the real `2.1.235` Claude Code binary symlinked
-onto a scratch `PATH` — so the `Verification` step is a genuine live completion
-through the gateway, not a stub. Your paths will show your own `$HOME` and your
-own binary instead of `/tmp/ldr-gt/s1b/home` and `/tmp/ldr-gt/s1b/bin/claude`.
+2026-08-28 on `sdfiana025` by `cwang31`, running the 792-line installer on
+`main` (md5 `923f10da37c971cb5fe57f61dcbcbc98`) against a **scratch `HOME` of
+`/tmp/ldr-gt/s2/home`** with `PATH=/usr/bin:/bin` — no personal Claude Code and
+no personal `uv` reachable at all, so every path named below is a shared one and
+the `Verification` step is a genuine live completion through the gateway, not a
+stub. Your paths will show your own `$HOME` instead of `/tmp/ldr-gt/s2/home`.
 Everything else should match line for line.
 
 ```
 
+
 ── Preflight
-  ✓ claude found: /tmp/ldr-gt/s1b/bin/claude (2.1.235 (Claude Code))
+  ✓ claude found: /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current (2.1.235 (Claude Code))
+  ✓ shared team binary, resolving to versions/2.1.235
+  ✓ shared tools on PATH: /sdf/group/lcls/ds/dm/apps/dev/bin (uv 0.9.8)
   ✓ key readable: /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat
   ✓ gateway reachable: https://ai-api.slac.stanford.edu (HTTP 200)
 
-── Config dir: /tmp/ldr-gt/s1b/home/.claude-lcls
-  ✓ wrote /tmp/ldr-gt/s1b/home/.claude-lcls/settings.json (mode 600)
+── Config dir: /tmp/ldr-gt/s2/home/.claude-lcls
+  ✓ wrote /tmp/ldr-gt/s2/home/.claude-lcls/settings.json (mode 600)
   ✓ no key is stored — apiKeyHelper reads it from /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat at runtime
 
 ── Shared skills: /sdf/group/lcls/ds/dm/apps/dev/claude/skills
-  ✓ linked 17 shared skill(s) into /tmp/ldr-gt/s1b/home/.claude-lcls/skills
+  ✓ linked 17 shared skill(s) into /tmp/ldr-gt/s2/home/.claude-lcls/skills
 
 ── Shell function: claude-lcls()
-  ✓ appended to /tmp/ldr-gt/s1b/home/.bashrc
+  ✓ appended to /tmp/ldr-gt/s2/home/.bashrc
 
 ── Verification
   ✓ live completion succeeded through https://ai-api.slac.stanford.edu
@@ -441,25 +459,27 @@ Done. Start a new shell (or: source ~/.bashrc), then:
 
     claude-lcls                       # interactive, SLAC gateway
     claude-lcls -p 'hello'            # one-shot
-    claude                           # your own setup, unchanged
-
-```
+    claude                           # your own setup, unchanged```
 
 Exit status `0`.
 
-That is **eight** `✓` lines. Things that will legitimately differ for you:
+That is **ten** `✓` lines. Things that will legitimately differ for you:
 
 * `✓ appended to ...` becomes `✓ refreshed in ...` on any re-run.
 * If you have both a `~/.bashrc` and a `~/.zshrc`, you get one `appended`/
   `refreshed` line per file. If you have neither, the script creates `~/.bashrc`.
 * If you already have a `~/.claude/settings.json`, Preflight prints one extra
   line — `✓ your existing ~/.claude/settings.json will NOT be modified` — for
-  nine `✓` lines instead of eight. The scratch `HOME` used above had none.
+  eleven `✓` lines instead of ten. The scratch `HOME` used above had none.
 
-If `claude` is not on your `PATH` and the script has to fall back to a versioned
-binary, you additionally get three `WARN:` lines before the first `✓` saying the
-launcher shim is missing and naming the binary it used instead. That is a
-warning, not a failure; the install continues.
+Preflight also prints a second binary line —
+`✓ shared team binary, resolving to versions/<ver>` — naming the version
+`bin/current` points at. Whether you have a personal `claude` makes no
+difference to any of this; the script does not look for one.
+
+The only case that adds `WARN:` lines is a deliberate `CLAUDE_LCLS_BIN`
+override, which announces itself twice before the first `✓`. If you did not set
+that variable, you should see no warnings at all.
 
 ---
 
@@ -555,12 +575,13 @@ grep -n 'claude-lcls' ~/.bashrc
 Expected — exactly one `>>>` line and one `<<<` line, wrapping the function:
 
 ```
-4:# >>> claude-lcls >>>
-5:# Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
+2:# >>> claude-lcls >>>
+3:# Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
 9:claude-lcls() {
-16:        echo "claude-lcls: no claude binary on PATH or under $HOME/.local/share/claude/versions" >&2
-19:    CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
-21:# <<< claude-lcls <<<
+10:    local _bin="${CLAUDE_LCLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
+12:        echo "claude-lcls: shared Claude Code binary is not runnable: $_bin" >&2
+16:    CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
+18:# <<< claude-lcls <<<
 ```
 
 Line numbers depend on how long your existing rc file is; what matters is that
@@ -571,22 +592,37 @@ written:
 # >>> claude-lcls >>>
 # Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
 # Your plain `claude` is untouched and keeps using ~/.claude/.
-# The shim can vanish, so resolve a binary at call time rather than assuming a
-# plain "claude" is on PATH.
+#
+# Runs the shared team binary, resolved at CALL time rather than baked to a
+# version, so a bump or a rollback on the deploy side reaches you with nothing
+# to re-run here. CLAUDE_LCLS_BIN overrides it if you deliberately set one; a
+# personal install never does.
 claude-lcls() {
-    local _bin
-    _bin="$(command -v claude 2>/dev/null)" || _bin=""
-    if [ -z "$_bin" ]; then
-        _bin="$(ls -d "$HOME"/.local/share/claude/versions/* 2>/dev/null | sort -V | tail -1)" || _bin=""
-    fi
-    if [ -z "$_bin" ] || [ ! -x "$_bin" ]; then
-        echo "claude-lcls: no claude binary on PATH or under $HOME/.local/share/claude/versions" >&2
+    local _bin="${CLAUDE_LCLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
+    if [ ! -x "$_bin" ]; then
+        echo "claude-lcls: shared Claude Code binary is not runnable: $_bin" >&2
+        echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
+    local _path="$PATH"
+    case ":$_path:" in
+        *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*) ;;
+        *) _path="$_path:/sdf/group/lcls/ds/dm/apps/dev/bin" ;;
+    esac
+    PATH="$_path" CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
 }
 # <<< claude-lcls <<<
 ```
+
+The `PATH` line appends the shared team tools directory, which is where `uv`
+lives. Several skills call a bare `uv run`, and nothing on S3DF puts `uv` on
+`PATH` by default. Appended rather than prepended, so your own `uv` still wins
+if you have one.
+
+> **Changed 2026-08-28.** This block used to resolve a binary through
+> `command -v claude` and then `$HOME/.local/share/claude/versions/*`. It no
+> longer does. If your rc still carries the old three-branch form, re-run the
+> installer — it refreshes the block in place.
 
 Your own `~/.claude/` and `~/.claude.json` are not touched by any of this. The
 `claude` command keeps working exactly as before.
@@ -641,6 +677,14 @@ ls -ld /sdf/group/lcls/ds/dm/apps/dev/claude/skills
 ls -1 /sdf/group/lcls/ds/dm/apps/dev/claude/skills | wc -l
 head -1 /sdf/group/lcls/ds/dm/apps/dev/claude/skills/askcode/SKILL.md
 
+# --- shared binary: THE check the publisher cannot run for you
+BIN=/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current
+ls -ld /sdf/group/lcls/ds/dm/apps/dev/claude/bin
+ls -l "$BIN"; readlink "$BIN"
+test -x "$BIN" && echo "binary executable: YES" || echo "binary executable: NO"
+"$BIN" --version
+getfacl -p /sdf/group/lcls/ds/dm/apps/dev/claude/bin
+
 # --- which installer you ran
 wc -l /path/to/install-claude-lcls.sh
 md5sum /path/to/install-claude-lcls.sh
@@ -651,6 +695,11 @@ ls -1 ~/.claude-lcls/skills | wc -l
 find ~/.claude-lcls/skills -maxdepth 1 -type l | wc -l
 for l in ~/.claude-lcls/skills/*; do [ -e "$l" ] || echo "DANGLING: $l"; done
 grep -c 'claude-lcls >>>' ~/.bashrc
+
+# --- isolation: your own config was not created or touched
+ls -ld ~/.claude 2>/dev/null || echo "no personal ~/.claude — expected if you never installed Claude Code"
+ls -l ~/.claude.json 2>/dev/null || echo "no personal ~/.claude.json — expected"
+du -sh ~/.claude-lcls
 
 # --- proof of life
 claude-lcls -p 'Reply with exactly: PONG' --model sonnet
@@ -729,10 +778,13 @@ new one.
 
 ## 8. Known-good vs known-bad
 
-Every row below was produced by actually running the 693-line `main` installer
-(md5 `51440d603fd6353fc5d0212b05e653a6`) on `sdfiana025` against a scratch
-`HOME` under `/tmp`, and the "what the script says" column is copied from that
-run. Two rows could not be produced honestly, because `cwang31` **is** in
+Every row below was produced by actually running the installer on `sdfiana025`
+against a scratch `HOME` under `/tmp`, and the "what the script says" column is
+copied from that run. The rc-file rows came from the 693-line installer (md5
+`51440d603fd6353fc5d0212b05e653a6`); the three binary rows at the bottom came
+from the 792-line shared-binary installer (md5
+`923f10da37c971cb5fe57f61dcbcbc98`) on 2026-08-28. The rc-handling code is
+unchanged between the two, so the earlier rows still hold. Two rows could not be produced honestly, because `cwang31` **is** in
 `ps-users` and **is** on the SLAC network: the "Not in `ps-users`" row was
 forced with `KEY_FILE=/tmp/no-such-key.dat` and the "Off the SLAC network" row
 with `BASE_URL=https://127.0.0.1:9`. Both reach the identical code path, so the
@@ -746,8 +798,9 @@ message text and the exit status are real; only the cause was simulated.
 | **Unwritable rc file** (e.g. mode 444 `~/.bashrc`) | `1` (`0` if another rc succeeded) | Preflight, config dir and all 17 skill links succeed first, then, in this order: `WARN: <rc> is not writable (mode 444, owner <you>).` / `WARN: fix it with: chmod u+w <rc>   (then re-run this script)` / `WARN: left <rc> COMPLETELY untouched -- nothing stripped, nothing appended, no backup written.` / `WARN: not writable, left untouched: <rc>` / `WARN: claude-lcls was NOT installed into the file(s) above; fix the permissions and re-run.` / `✗ claude-lcls could not be installed into ANY shell rc. Fix the file(s) above and re-run.` The rc file is left byte-identical (verified by md5, mode still `444`), and no `.claude-lcls-bak` is written. There is no `── Verification` section at all — the run dies before it. Re-run after `chmod u+w` and it completes — confirmed, exit `0` with exactly one marker pair. If you have two rc files and only one of them is unwritable, the writable one **is** installed: the same five `WARN:` lines appear for the bad file, then `WARN: claude-lcls WAS installed into at least one other rc; continuing.`, and the run proceeds to `── Verification` and exits `0`. The diagnosis is target-aware. For a symlinked rc it first prints `WARN: <rc> is a symlink to <target>; everything below refers to the target.` and everything after that names `<target>`, not `<rc>`. For a writable file sitting in a read-only **directory** it prints `WARN: <target> is writable, but its directory <dir> is not (mode 555, owner <you>).` / `WARN: refreshing an existing block renames a temp file into that directory, so it needs write permission on the DIRECTORY, not on the file.` / `WARN: fix it with: chmod u+w <dir>   (then re-run this script)` — the remedy names the directory, not the file. Under `DRY_RUN=1` the same five `WARN:` lines appear, then `WARN: a real run would stop here with exit 1: no usable shell rc.`, and the script continues into `── Verification`, prints `Dry run complete. Nothing was written.` and exits `0`. |
 | **Symlinked rc file** (dotfiles / stow / chezmoi) | `0` | Nothing special — `✓ appended to ~/.bashrc` on the first run and `✓ refreshed in ~/.bashrc` on the second. The point is what does *not* happen: `~/.bashrc` stays a symlink, the block lands in the physical file behind it, and a second run leaves exactly one marker pair rather than replacing the link with a regular file. A link that cannot be resolved is refused instead of followed: `WARN: <rc> is a symlink that cannot be resolved: a missing directory somewhere in the chain, or a symlink loop.` / `WARN: inspect it with:  ls -l <rc>   and   readlink -f <rc>`, and the file then takes the unwritable-rc verdict above — exit `1` unless another rc took the block. A broken chain and a symlink loop produce the identical pair of lines; the installer cannot and does not distinguish them. |
 | **Broken markers** (a `# >>> claude-lcls >>>` with no matching `# <<< claude-lcls <<<`) | `1` (`0` if another rc succeeded) | `WARN: <rc> has an UNTERMINATED claude-lcls block: a '# >>> claude-lcls >>>' line with no matching '# <<< claude-lcls <<<' (or a second '# >>> claude-lcls >>>' inside an open block).` / `WARN: left <rc> COMPLETELY untouched — nothing stripped, nothing appended, no backup written.` / `WARN: fix it by hand (delete the stray '# >>> claude-lcls >>>' line, or add the missing '# <<< claude-lcls <<<') so exactly one begin/end pair remains, then re-run.` / `WARN: left untouched and still needing manual repair: <rc>` / `WARN: claude-lcls was NOT installed into the file(s) above; repair the markers and re-run.` / `✗ claude-lcls could not be installed into ANY shell rc. Fix the file(s) above and re-run.` The rc is left byte-identical (md5 verified) and no `.claude-lcls-bak` is written. Broken markers share one verdict with the unwritable case: if no rc took the block the run exits `1`; if a different rc did take it, you get `WARN: claude-lcls WAS installed into at least one other rc; continuing.` and exit `0`. Read the warnings; a `0` there does not mean the function was installed in *this* file. |
-| **No `claude` binary at all** | `1` | `✗ no 'claude' on PATH and no versioned binary under <your $HOME>/.local/share/claude/versions. Install Claude Code first, then re-run.` — the path is printed expanded, not as the literal `$HOME`. Nothing is written; not even the config dir. |
-| **No `claude` on PATH, versioned binary present** | `0` | Three `WARN:` lines about the missing launcher shim, naming the versioned binary it will use, then a normal successful install. |
+| **No personal `claude` anywhere** — nothing on `PATH`, no `~/.local/share/claude` | `0` | **A normal, successful install.** Verified 2026-08-28 against a scratch `HOME` with `PATH=/usr/bin:/bin`: preflight resolved `/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current (2.1.235 (Claude Code))`, 17 skills linked, live `PONG` through the gateway. This row used to read exit `1` / "Install Claude Code first"; that is no longer the behaviour. |
+| **Shared binary unreadable** (not in `ps-users`) | `1` | `✗ cannot run the Claude Code binary: /sdf/.../claude/bin/current`, then your group list and the advice to ask for `ps-users` membership — explicitly *not* to install Claude Code yourself. Nothing is written; not even the config dir. |
+| **`CLAUDE_LCLS_BIN` set to a bad path** | `1` | Two `WARN:` lines naming the override and how to unset it, then `✗ cannot run the Claude Code binary: <that path>` and `CLAUDE_LCLS_BIN is set to a path that is not executable.` Verified 2026-08-28. |
 
 ### How rows 4 and 5 were exercised
 

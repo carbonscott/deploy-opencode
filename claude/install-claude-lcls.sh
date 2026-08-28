@@ -2,20 +2,34 @@
 # Install `claude-lcls` — Claude Code pointed at the SLAC AI Gateway.
 #
 # Gives you a `claude-lcls` command that runs Claude Code against
-# https://ai-api.slac.stanford.edu using the shared team key, WITHOUT touching
-# your existing `claude` setup (personal subscription, API key, whatever you
-# already have). The two live side by side:
+# https://ai-api.slac.stanford.edu using the shared team key and the shared
+# team binary, WITHOUT touching your existing `claude` setup (personal
+# subscription, API key, whatever you already have). The two live side by side:
 #
-#     claude        -> your existing config, untouched
-#     claude-lcls   -> SLAC gateway, team key, this config
+#     claude        -> your own install and ~/.claude/, untouched
+#     claude-lcls   -> shared binary, SLAC gateway, team key, ~/.claude-lcls/
+#
+# You do NOT need to install Claude Code first. The binary is deployed for
+# ps-users at /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current, and that is the
+# only binary claude-lcls runs. A personal install, if you have one, is never
+# read — not as a fallback, not at all.
+#
+# Everything claude-lcls writes stays in your own $HOME/.claude-lcls/: settings,
+# sessions and transcripts included. Nothing is shared between users except the
+# read-only binary and the read-only skills.
+#
+# claude-lcls also appends the shared team tools directory
+# (/sdf/group/lcls/ds/dm/apps/dev/bin, where `uv` lives) to PATH for its own
+# sessions only, so skills that shell out to `uv run` work without you
+# installing uv. Appended, so your own uv still takes precedence.
 #
 # Usage:
 #   ./install-claude-lcls.sh              # install (safe to re-run)
 #   ./install-claude-lcls.sh --uninstall  # remove it again
 #   ./install-claude-lcls.sh --dry-run    # show what would happen, write nothing
 #
-# Requirements: membership in `ps-users`, the `claude` binary on PATH, and the
-# SLAC network or VPN. The script checks all three before writing anything.
+# Requirements: membership in `ps-users` and the SLAC network or VPN. The script
+# checks both — plus that the shared binary runs — before writing anything.
 #
 # See docs/claude-code-lcls-setup.md for the reference guide.
 
@@ -29,6 +43,30 @@ FUNC_NAME="${FUNC_NAME:-claude-lcls}"
 SKILLS_SRC="${SKILLS_SRC:-/sdf/group/lcls/ds/dm/apps/dev/claude/skills}"
 DRY_RUN="${DRY_RUN:-0}"
 
+# The shared team binary. A symlink into bin/versions/<ver>, so a version bump
+# or a rollback is a symlink flip on the deploy side and needs no change here
+# and no action from you. Never resolve this to a pinned version: the whole
+# point is that the deployment decides which version everyone runs.
+SHARED_BIN="${SHARED_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
+
+# Shared team tools, APPENDED to PATH inside claude-lcls sessions. This is where
+# `uv` lives, and several deployed skills (confluence-search, ask-slac-ai-tools)
+# call a bare `uv run` on a PEP 723 script. Nothing on S3DF puts this directory
+# on PATH by default and no skill's env.sh adds it, so a ps-users member without
+# a PERSONAL uv install had no uv at all -- while someone who happened to have
+# one silently did. That difference is exactly the kind of thing a centralized
+# deployment exists to remove.
+#
+# APPENDED, not prepended, on purpose: a user who already has their own uv keeps
+# it. This only fills a gap, it never overrides a choice someone made.
+SHARED_TOOLS_BIN="${SHARED_TOOLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/bin}"
+
+# Escape hatch, opt-in only. Set CLAUDE_LCLS_BIN to run claude-lcls against some
+# other binary — testing this script, or pinning an older version during an
+# incident. It is never consulted implicitly: leaving it unset does NOT fall
+# back to a personal install.
+CLAUDE_LCLS_BIN="${CLAUDE_LCLS_BIN:-}"
+
 MARK_BEGIN="# >>> claude-lcls >>>"
 MARK_END="# <<< claude-lcls <<<"
 
@@ -36,6 +74,17 @@ ok()   { echo "  ✓ $*"; }
 warn() { echo "  WARN: $*" >&2; }
 die()  { echo "  ✗ $*" >&2; exit 1; }
 step() { echo; echo "── $*"; }
+
+# --help prints the header comment block. The range is DERIVED — consecutive
+# comment lines from line 2 until the first line that is not one — rather than
+# hardcoded as `sed -n '2,20p'`. The hardcoded form silently truncated its own
+# help the moment the header grew by a line, which is precisely what happened
+# when the shared-binary paragraphs were added above.
+usage() {
+  awk 'NR==1 {next}
+       /^#/  {sub(/^# ?/, ""); print; next}
+             {exit}' "$0"
+}
 
 # Marker matching is normalised: trailing whitespace and carriage returns are
 # stripped before comparing, so a CRLF rc or a marker line with a stray trailing
@@ -256,7 +305,7 @@ for arg in "$@"; do
   case "$arg" in
     --uninstall) MODE=uninstall ;;
     --dry-run)   DRY_RUN=1 ;;
-    -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   usage; exit 0 ;;
     *)           die "unknown argument: $arg (try --help)" ;;
   esac
 done
@@ -366,31 +415,70 @@ fi
 # ─── Preflight ────────────────────────────────────────────────────────────
 step "Preflight"
 
-# Resolve a usable claude binary.
+# Resolve the claude binary. Exactly two sources, in this order:
 #
-# The launcher shim ~/.local/bin/claude comes and goes on shared hosts -- it has
-# been observed created and deleted mid-session by another actor -- and a missing
-# shim must not stop the install. Fall back to the newest versioned binary.
+#   1. $CLAUDE_LCLS_BIN   explicit, opt-in, for testing or an incident pin
+#   2. $SHARED_BIN        the deployed team binary
 #
-# Do NOT "fix" a missing shim by overriding HOME: the shim resolves its own
-# version directory from $HOME, so overriding it yields "No claude binary found".
-VERSIONS_DIR="${VERSIONS_DIR:-$HOME/.local/share/claude/versions}"
-CLAUDE_BIN="$(command -v claude 2>/dev/null)" || CLAUDE_BIN=""
-if [ -z "$CLAUDE_BIN" ]; then
-  CLAUDE_BIN="$(ls -d "$VERSIONS_DIR"/* 2>/dev/null | sort -V | tail -1)" || CLAUDE_BIN=""
-  if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
-    warn "no 'claude' on PATH -- the launcher shim ~/.local/bin/claude is missing"
-    warn "using the newest versioned binary instead: $CLAUDE_BIN"
-    warn "restore the shim, and keep ~/.local/bin on PATH, so a plain 'claude' works too"
-  else
-    die "no 'claude' on PATH and no versioned binary under $VERSIONS_DIR. Install Claude Code first, then re-run."
-  fi
+# There is deliberately no third. Earlier versions of this script fell back to
+# `command -v claude` and then to $HOME/.local/share/claude/versions/*, which
+# made claude-lcls hostage to a personal install: the ~/.local/bin/claude
+# launcher shim was observed vanishing from a home directory mid-campaign,
+# leaving the function correctly installed and unable to start. It also meant
+# two people running `claude-lcls` could silently be running two different
+# Claude Code versions against the same gateway.
+#
+# A personal install is now never read. Your plain `claude` keeps working
+# exactly as it did, against its own ~/.claude/ — this script does not touch it.
+if [ -n "$CLAUDE_LCLS_BIN" ]; then
+  CLAUDE_BIN="$CLAUDE_LCLS_BIN"
+  warn "using CLAUDE_LCLS_BIN override: $CLAUDE_BIN"
+  warn "unset it to go back to the shared team binary at $SHARED_BIN"
+else
+  CLAUDE_BIN="$SHARED_BIN"
 fi
+
+if [ ! -x "$CLAUDE_BIN" ]; then
+  echo "  ✗ cannot run the Claude Code binary: $CLAUDE_BIN" >&2
+  echo >&2
+  if [ "$CLAUDE_BIN" = "$SHARED_BIN" ]; then
+    # Same root cause as an unreadable key file, so give the same remedy rather
+    # than sending people off to install Claude Code themselves — which is
+    # exactly what this deployment exists to stop them having to do.
+    echo "    The shared binary is deployed for 'ps-users'. You are in:" >&2
+    echo "      $(id -nG)" >&2
+    echo >&2
+    echo "    If 'ps-users' is missing above, ask for membership — it is the same" >&2
+    echo "    group that grants the gateway key and the shared skills." >&2
+    echo >&2
+    echo "    If you ARE in ps-users and this still fails, the deployment is at" >&2
+    echo "    fault, not you. Report it rather than installing Claude Code" >&2
+    echo "    yourself: this script no longer uses a personal install." >&2
+  else
+    echo "    CLAUDE_LCLS_BIN is set to a path that is not executable." >&2
+    echo "    Unset it to use the shared team binary at $SHARED_BIN." >&2
+  fi
+  exit 1
+fi
+
 # A binary that exists and is executable but cannot RUN is a preflight failure,
 # not a green checkmark with version "unknown".
 CLAUDE_VER="$("$CLAUDE_BIN" --version 2>&1 | head -1)" \
   || die "'$CLAUDE_BIN' exists but failed to run: $CLAUDE_VER"
 ok "claude found: $CLAUDE_BIN ($CLAUDE_VER)"
+if [ "$CLAUDE_BIN" = "$SHARED_BIN" ] && [ -L "$SHARED_BIN" ]; then
+  ok "shared team binary, resolving to $(readlink "$SHARED_BIN")"
+fi
+
+# Shared tools are a convenience, not a requirement -- most skills do not need
+# uv, and the wrapper still works without it. So this warns and continues rather
+# than dying, unlike the binary and the key.
+if [ -x "$SHARED_TOOLS_BIN/uv" ]; then
+  ok "shared tools on PATH: $SHARED_TOOLS_BIN (uv $("$SHARED_TOOLS_BIN/uv" --version 2>/dev/null | awk '{print $2}'))"
+else
+  warn "shared tools dir has no runnable uv: $SHARED_TOOLS_BIN"
+  warn "skills that call 'uv run' will fail unless you have your own uv on PATH"
+fi
 
 [ -r "$KEY_FILE" ] || {
   echo "  ✗ cannot read $KEY_FILE" >&2
@@ -550,19 +638,27 @@ read -r -d '' SNIPPET <<EOF || true
 $MARK_BEGIN
 # Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
 # Your plain \`claude\` is untouched and keeps using ~/.claude/.
-# The shim can vanish, so resolve a binary at call time rather than assuming a
-# plain "claude" is on PATH.
+#
+# Runs the shared team binary, resolved at CALL time rather than baked to a
+# version, so a bump or a rollback on the deploy side reaches you with nothing
+# to re-run here. CLAUDE_LCLS_BIN overrides it if you deliberately set one; a
+# personal install never does.
 $FUNC_NAME() {
-    local _bin
-    _bin="\$(command -v claude 2>/dev/null)" || _bin=""
-    if [ -z "\$_bin" ]; then
-        _bin="\$(ls -d "\$HOME"/.local/share/claude/versions/* 2>/dev/null | sort -V | tail -1)" || _bin=""
-    fi
-    if [ -z "\$_bin" ] || [ ! -x "\$_bin" ]; then
-        echo "$FUNC_NAME: no claude binary on PATH or under \$HOME/.local/share/claude/versions" >&2
+    local _bin="\${CLAUDE_LCLS_BIN:-$SHARED_BIN}"
+    if [ ! -x "\$_bin" ]; then
+        echo "$FUNC_NAME: shared Claude Code binary is not runnable: \$_bin" >&2
+        echo "$FUNC_NAME: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
+    # Shared team tools (uv, docs-index) appended to PATH, so skills that call a
+    # bare \`uv run\` work whether or not you have your own uv. Appended, so your
+    # own uv still wins. Guarded, so nesting claude-lcls does not repeat it.
+    local _path="\$PATH"
+    case ":\$_path:" in
+        *":$SHARED_TOOLS_BIN:"*) ;;
+        *) _path="\$_path:$SHARED_TOOLS_BIN" ;;
+    esac
+    PATH="\$_path" CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
 }
 $MARK_END
 EOF
@@ -673,10 +769,13 @@ else
   echo >&2
   echo "  Things to check, in order:" >&2
   echo >&2
-  echo "   1. 'No claude binary found in .../versions' means the launcher on PATH" >&2
-  echo "      could not resolve its versioned binary under your \$HOME. Do NOT try" >&2
-  echo "      to fix this by overriding HOME in the wrapper — the launcher reads" >&2
-  echo "      \$HOME to find itself, so that breaks it. Reinstall Claude Code." >&2
+  echo "   1. Binary problems: claude-lcls runs ONLY the shared team binary" >&2
+  echo "        $SHARED_BIN" >&2
+  echo "      Check it directly:  $SHARED_BIN --version" >&2
+  echo "      Permission denied or no such file usually means ps-users membership" >&2
+  echo "      lapsed — check with 'id -nG'. Do NOT fix this by installing Claude" >&2
+  echo "      Code into your home directory: this script does not use a personal" >&2
+  echo "      install, so it would change nothing." >&2
   echo >&2
   echo "   2. Auth errors: confirm the key still works, independent of Claude Code:" >&2
   echo "        curl -s -o /dev/null -w '%{http_code}\\n' \\" >&2
