@@ -28,14 +28,20 @@ moved those bodies to `src/<name>/` — and are classified by content, not date.
 | Category | Entries |
 | --- | --- |
 | (a) this session's single-source / renderer / claude-harness work | **56** |
+| (a7) shared-binary work, added 2026-08-28 | **10** (3 new, 7 modified) |
 | (b) pre-existing human work, untouched | **35** |
 | (c1) junk — recommend not committing | **13** |
 | (c2) externally-managed copies — recommend `.gitignore`, not commit | **30** |
 | total accounted | **134** = 56 + 35 + 13 + 30 |
 
+The (a7) row is deliberately outside that sum. It was added on 2026-08-28,
+after the 134-entry snapshot: 3 of its files are new since then, and the other
+7 were already counted in (a) and were simply modified again. The 134 still
+describes the working tree as it stood on 2026-08-26.
+
 ---
 
-## (a) Session work — six commits
+## (a) Session work — seven commits
 
 ### Commit 1 — `Render skills from one source into both harness trees`
 
@@ -93,6 +99,13 @@ gives, and errors loudly on a repo matching neither layout instead of silently
 shipping nothing. The install script and settings template are what a user points
 at that tree with.
 
+> **Note, 2026-08-28.** `claude/install-claude-lcls.sh` and
+> `docs/claude-code-lcls-setup.md` were both modified again by the shared-binary
+> work (Commit 7). Commit 3 should carry the versions as they stood before that;
+> if the commits are made in one pass after the fact, fold these two files into
+> Commit 7 instead of splitting them, rather than reconstructing an intermediate
+> state nobody ever ran.
+
 ### Commit 4 — `Check deployed skills against their source for drift`
 
 ```
@@ -139,6 +152,42 @@ docs/commit-plan.sh
 against fixtures rather than reality, the askcode pilot, and the production drift
 found along the way. Committed last so the code commits stay readable on their
 own.
+
+### Commit 7 — `Run claude-lcls on a shared team binary, not a personal install`
+
+Added 2026-08-28, after the original six were planned.
+
+```
+tools/claude-binary/env.sh                          (new)
+tools/claude-binary/scripts/publish-claude-binary.sh (new)
+docs/claude-binary-publish.md                       (new)
+claude/install-claude-lcls.sh                       (modified)
+docs/claude-code-lcls-setup.md                      (modified)
+docs/claude-lcls-second-user-handoff.md             (modified)
+docs/deploy-rollback.md                             (modified)
+docs/deploy-permissions.md                          (modified)
+tools/deploy-backup/scripts/deploy-backup.sh        (modified)
+.gitignore                                          (modified)
+```
+
+*Why:* `install-claude-lcls.sh` required a personal Claude Code install and
+refused to run without one, so 17 deployed skills reached only people who had
+already installed the harness themselves — and the `~/.local/bin/claude` launcher
+shim was observed vanishing from a home directory, leaving `claude-lcls`
+installed and unable to start (claims C17, C22). One binary is now published for
+`ps-users` at `dev/claude/bin/`, and the installer resolves that and nothing
+else: the personal-install fallbacks are removed, not reordered. The doc changes
+are the ripple — three of them correct statements that this work made false,
+including the second-user handoff's "Route A DOES NOT WORK", which is now the
+recommended route.
+
+*Note on `deploy.sh`:* deliberately **not** modified. The binary is not a skill,
+and the standing instruction was not to grow a `bin/` target there. Publishing is
+a separate tool.
+
+*Note on `.gitignore`:* `claude/bin/` is added so the 330 MB binary can never be
+committed. This repo has never carried binaries (see (c1) below) and must not
+start.
 
 ---
 

@@ -28,7 +28,7 @@ This is a *different path* from the opencode deployment this repo also maintains
 | Network | The gateway resolves and answers **only from the SLAC network or VPN**. On S3DF (`sdfiana025`, `sdfcron001`, batch nodes) it just works. From a laptop off-VPN it will not. |
 | Key file | `/sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat` |
 | Key permissions | `-rw-r-----  cwang31  ps-users`, 26 bytes, mode `0640` |
-| Claude Code | `claude` ≥ 2.1.x. On S3DF this is a personal install: the launcher shim at `~/.local/bin/claude` wraps the real binary in `~/.local/share/claude/versions/<ver>`. **Measured 2026-08-26: the shim is currently missing from `/sdf/home/c/cwang31/.local/bin/` while `versions/2.1.228`, `2.1.233` and `2.1.235` are all present** — invoke the versioned binary directly until it is restored. |
+| Claude Code | **Nothing to install.** The binary is deployed for `ps-users` at `/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current` (2.1.235 as of 2026-08-28). `claude-lcls` runs that one and only that one. |
 
 ### Who can be onboarded
 
@@ -48,6 +48,68 @@ a repo, a ticket, or a chat message.
 > opencode) is *also* `ps-users` / `0640` today — 25 bytes. Earlier internal
 > notes describing it as `ps-data` are out of date; both keys currently have the
 > same, broader audience. `tools/fix-key-perms.sh` re-asserts these modes.
+
+---
+
+## The shared binary
+
+You do not install Claude Code to use `claude-lcls`. One binary is deployed for
+the whole `ps-users` group:
+
+```
+/sdf/group/lcls/ds/dm/apps/dev/claude/bin/
+├── versions/2.1.235          the binary, 0755 ps-users
+├── current -> versions/2.1.235
+└── VERSIONS.json             version, SHA-256, when and by whom
+```
+
+`claude-lcls` resolves `bin/current` **at call time**, so a version bump or a
+rollback on the deploy side reaches you with nothing to re-run.
+
+**It runs that binary and no other.** There is deliberately no fallback to
+`command -v claude` or to `~/.local/share/claude/versions/*`. Two reasons: the
+`~/.local/bin/claude` launcher shim has been observed vanishing from a home
+directory, which used to leave `claude-lcls` installed and unable to start; and
+a fallback meant two people could silently run two different Claude Code
+versions against the same gateway.
+
+Your own `claude` is untouched by all of this. It keeps using your own install
+and your own `~/.claude/`. This setup never reads either one.
+
+> **Escape hatch.** `CLAUDE_LCLS_BIN=/path/to/claude claude-lcls ...` overrides
+> the shared binary for one command — useful for pinning an older version during
+> an incident. It is opt-in: leaving it unset does *not* fall back to a personal
+> install.
+
+To publish or roll back a version, see `docs/claude-binary-publish.md`. Rolling
+back is one command and needs no action from users.
+
+### Where your files go
+
+Everything `claude-lcls` writes lands in **your own** `$HOME/.claude-lcls/`.
+Nothing is shared between users except the read-only binary and the read-only
+skills. Measured on a config dir with real use behind it:
+
+| Item | Path | Size |
+|---|---|---|
+| Transcripts | `~/.claude-lcls/projects/<slugified-cwd>/*.jsonl` | 2.4 MB |
+| Plugins | `~/.claude-lcls/plugins/` | 6.4 MB |
+| Sessions, history, shell snapshots, backups | `~/.claude-lcls/` | ~80 KB |
+| Skill symlinks into the shared tree | `~/.claude-lcls/skills/` | 68 KB |
+| **Total** | | **8.9 MB** |
+
+Home directories carry a **30 GB per-user quota** (`df ~` reports 30 G while the
+raw filesystem is 273 T). Two things follow.
+
+**Not installing Claude Code personally saves you ~626 MB.** That is the
+measured size of `~/.local/share/claude` on an account carrying two versioned
+binaries. The shared copy costs you nothing.
+
+**Transcripts are cleaned up on a bounded schedule.** Measured 2026-08-28: the
+oldest surviving transcript in a config dir used since January was 25 days old,
+consistent with Claude Code's default `cleanupPeriodDays` retention running
+normally. Set `cleanupPeriodDays` in `~/.claude-lcls/settings.json` if you want a
+different window; the installer does not set one, so you get the default.
 
 ---
 
@@ -154,23 +216,24 @@ Your existing `~/.claude/` is not read, not written, and not modified.
 
 ```bash
 claude-lcls() {
-  CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" command claude "$@"
+  local _bin="${CLAUDE_LCLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
+  if [ ! -x "$_bin" ]; then
+    echo "claude-lcls: shared Claude Code binary is not runnable: $_bin" >&2
+    echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
+    return 127
+  fi
+  CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" "$_bin" "$@"
 }
 ```
 
-If the `claude` launcher is not on your `PATH` — which is currently the case on
-`sdfiana025`, see [Troubleshooting](#troubleshooting) — call the versioned binary
-directly instead:
+This is what `install-claude-lcls.sh` writes for you; the manual form is here
+only for people who would rather not run the installer.
 
-```bash
-claude-lcls() {
-  CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" \
-    exec "$HOME/.local/share/claude/versions/2.1.235" "$@"
-}
-```
-
-Prefer the `command claude` form once the launcher is restored: it survives
-version upgrades, whereas the pinned path does not.
+Two details are deliberate. `bin/current` is resolved **at call time**, not
+frozen into the function, so a version bump or rollback on the deploy side
+reaches you with nothing to re-run. And there is no fallback to `command claude`
+or to `~/.local/share/claude/versions/*` — see
+[The shared binary](#the-shared-binary) for why.
 
 **3. Use them independently:**
 
@@ -219,16 +282,17 @@ that the variable was ignored.
 
 A tempting shortcut is `HOME=/some/dir claude ...`. **Do not.**
 
-The `claude` launcher on `PATH` is a shim that resolves its real binary from a
-path *under the user's home directory*
-(`$HOME/.local/share/claude/versions/<version>`). Override `HOME` and the shim
-looks for the binary somewhere it does not exist, and the launch fails. The
-versioned binary itself is unaffected — invoked by absolute path with `HOME`
-overridden it still runs (`2.1.235 (Claude Code)`) — so the breakage is specific
-to the launcher, which is the thing people actually type.
-
 `CLAUDE_CONFIG_DIR` alone is sufficient for isolation. Adding `HOME` buys nothing
-and costs you the launcher.
+and costs you your shell environment, your SSH keys, your Kerberos cache and
+anything else keyed off the home directory.
+
+> **Updated 2026-08-28.** This section used to give a second, sharper reason: the
+> `claude` launcher shim resolved its real binary from
+> `$HOME/.local/share/claude/versions/<ver>`, so overriding `HOME` made the
+> launch fail outright. That no longer applies to `claude-lcls`, which invokes
+> the shared binary by absolute path and is indifferent to `HOME`. The advice
+> stands; only the mechanism changed. It still applies verbatim to your
+> *personal* `claude`, which is still launched through that shim.
 
 ### Shared skills
 
@@ -289,12 +353,10 @@ cd /tmp && claude-lcls -p \
 The team skill names should appear alongside Claude Code's bundled ones.
 
 Use `claude-lcls` here, not a bare `claude`. The function sets
-`CLAUDE_CONFIG_DIR` for you and resolves its own binary: when the launcher shim
-`~/.local/bin/claude` is missing — it is known to come and go on shared hosts —
-the function falls back to the newest binary under
-`~/.local/share/claude/versions/`, where a bare `claude` would fail with
-`command not found`. `install-claude-lcls.sh` applies the same fallback in its
-preflight and in its own verification step.
+`CLAUDE_CONFIG_DIR` for you and runs the shared team binary by absolute path, so
+it works whether or not you have a personal `claude` on `PATH`.
+`install-claude-lcls.sh` resolves the same binary in its preflight and in its own
+verification step.
 
 The group ownership the shared target carries is settled in
 [`deploy-permissions.md`](deploy-permissions.md).
@@ -537,8 +599,9 @@ resolve.
 | `Invalid model name ...[1m]` from curl | You put a Claude Code alias suffix in a raw API call. Drop `[1m]`. |
 | Hang / connection refused | Off the SLAC network or VPN. |
 | `cat: ...slac-key.dat: Permission denied` | Not in `ps-users`. |
-| `claude: command not found`, but `~/.local/share/claude/versions/` is full of binaries | The launcher shim `~/.local/bin/claude` is missing while the versioned binaries survive — the state on `sdfiana025` as of 2026-08-26. Run the versioned binary directly (`~/.local/share/claude/versions/2.1.235`), or re-run the native installer to restore the shim. Do **not** work around it by overriding `HOME`. |
-| Launcher fails to find its binary after you set `HOME` | Expected. The shim resolves `$HOME/.local/share/claude/versions/<ver>`. Drop the `HOME` override; `CLAUDE_CONFIG_DIR` alone gives you isolation. |
+| `claude-lcls: shared Claude Code binary is not runnable: ...` | You are probably no longer in `ps-users` — check `id -nG`. Test the binary directly: `/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current --version`. Do **not** fix this by installing Claude Code into your home directory; `claude-lcls` does not use a personal install, so it would change nothing. |
+| `claude: command not found` | That is your *personal* `claude`, which this setup does not provide and does not touch. `claude-lcls` is unaffected — it runs the shared binary by absolute path. |
+| Everyone suddenly on a different Claude Code version | Expected after a deploy-side `activate`. `bin/current` is resolved at call time by design. `readlink /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current` shows which version is live; `VERSIONS.json` beside it records when it changed and by whom. |
 | `claude-lcls` picks up your personal settings | The function is exporting nothing — check it sets `CLAUDE_CONFIG_DIR` *on the command*, and that `~/.claude-lcls/settings.json` exists. A config dir with no `settings.json` falls back to defaults, not to `~/.claude/`. |
 | `max_tokens must be greater than thinking.budget_tokens` | The gateway applies an extended-thinking budget by default; `max_tokens: 1` is too small for some models. Raise it (e.g. 1025) or disable thinking. |
 
