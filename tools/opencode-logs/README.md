@@ -5,13 +5,17 @@ Ingest OpenCode session logs into DuckDB for structured analysis of API response
 ## Quick Start
 
 ```bash
+source env.sh && \
 uv run ingest_opencode_logs.py \
   --log-dir ~/.local/share/opencode/log \
   --db opencode_logs.db
 ```
 
+`env.sh` puts the shared `uv` on PATH; source it in the same shell as `uv run`.
+
 For sandbox users:
 ```bash
+source env.sh && \
 uv run ingest_opencode_logs.py \
   --log-dir "$SCRATCH/$USER-opencode-sandbox/home/.local/share/opencode/log" \
   --db opencode_logs.db

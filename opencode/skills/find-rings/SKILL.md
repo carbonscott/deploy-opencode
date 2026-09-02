@@ -120,6 +120,7 @@ After 4 failed attempts, **stop honestly** -- the image likely doesn't have dete
 
 If the quality gate says "Retry" because you have 1-2 peaks with score > 50 but you can see more rings in the overlay, try lowering the threshold:
 ```bash
+source /sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/env.sh
 find_rings_run python /sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/scripts/elsd_detect.py IMAGE.npy --min-peak-score 20 --viz /tmp/overlay.png -o /tmp/rings.json
 ```
 

@@ -57,6 +57,7 @@ img = (img - np.mean(img)) / np.std(img)
 The `--fit` flag automates the full detection-to-fitting pipeline:
 
 ```bash
+source /sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/env.sh
 uv run scripts/find_rings.py IMAGE.npy --fit --for-fitting --viz rings.png -o rings.json
 ```
 
