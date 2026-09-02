@@ -67,5 +67,11 @@ You answer questions about SLAC's Shared Scientific Data Facility (S3DF) by sear
 ## Important notes
 
 - The docs are from the official `slaclab/sdf-docs` repository (branch: `prod`)
-- If the index is missing, rebuild it: `docs-index index /sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs --incremental --ext md`
+- If the index is missing, rebuild it:
+  ```bash
+  PATH="/sdf/group/lcls/ds/dm/apps/dev/bin:$PATH" \
+  UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python \
+  UV_CACHE_DIR=/tmp/uv-cache-$USER \
+  docs-index index /sdf/group/lcls/ds/dm/apps/dev/data/sdf-docs --incremental --ext md
+  ```
 - For Slurm-specific questions with more depth, consider also using `@ask-slurm-s3df`

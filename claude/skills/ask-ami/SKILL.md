@@ -83,6 +83,9 @@ ORDER BY fi.path LIMIT 20;
 AMI has Sphinx design documentation that can be searched:
 
 ```bash
+PATH="/sdf/group/lcls/ds/dm/apps/dev/bin:$PATH" \
+UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python \
+UV_CACHE_DIR=/tmp/uv-cache-$USER \
 docs-index search /sdf/group/lcls/ds/dm/apps/dev/software/ami/docs/source "<query>" --limit 5
 ```
 

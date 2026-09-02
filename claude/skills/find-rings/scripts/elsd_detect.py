@@ -9,6 +9,7 @@ in 2D image space without needing a center guess.  Post-processing
 center + ring radii suitable for spatial-calib-xray fitting.
 
 Usage:
+    source /sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/env.sh
     uv run scripts/elsd_detect.py IMAGE.npy -o rings.json --viz /tmp/overlay.png
     uv run scripts/elsd_detect.py IMAGE.npy --clip-low 2 --clip-high 99 --scale log1p
 """

@@ -7,6 +7,7 @@ Takes initial guesses (center + radii) from elsd_detect.py JSON output or
 explicit CLI args, and fits them to sub-pixel precision.
 
 Usage:
+    source /sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/env.sh
     uv run scripts/find_rings.py IMAGE.npy --from-json rings.json --fit --viz-fitted /tmp/fitted.png -o fitted.json
     uv run scripts/find_rings.py IMAGE.npy --center-x 883 --center-y 876 --radii 157,309,461,613,771 --fit
 """
@@ -28,6 +29,7 @@ def run_fitting(data, valid, cx, cy, radii, num_samples=1000):
     except ImportError:
         raise ImportError(
             "spatial-calib-xray is not installed. Install with:\n"
+            "  source /sdf/group/lcls/ds/dm/apps/dev/tools/find-rings/env.sh\n"
             "  uv pip install git+https://github.com/carbonscott/spatial-calib-xray.git"
         )
 
