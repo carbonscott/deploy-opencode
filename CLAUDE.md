@@ -32,6 +32,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/ask-slac-ai-tools/` | You | ask-slac-ai-tools skill (which AI tools are approved at SLAC, including PHI/CUI eligibility) |
 | `dev/opencode/skills/confluence-search/` | You | confluence-search skill (live CQL search of SLAC Confluence; **per-user token**, no shared credential) |
 | `dev/opencode/skills/elog-search/` | You | elog-search skill (live read-only search of the LCLS eLog; **per-user S3DF token**, no shared credential) |
+| `dev/opencode/skills/jira-search/` | You | jira-search skill (live JQL search of SLAC Jira, read-only; **per-user token**, no shared credential) |
 | `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
 | `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
 | `dev/data/olcf-docs/` | You | olcf-user-docs git repo with FTS5 search index (from olcf/olcf-user-docs) |
@@ -115,6 +116,7 @@ Deployed files are copies (not symlinks) from these source projects:
 | `data/ask-slac-ai-tools/ai-tooling.db` | Built via `setup.sh` in source clone, then `cp build/ai-tooling.db /sdf/group/lcls/ds/dm/apps/dev/data/ask-slac-ai-tools/` (no cron — static curated data) |
 | `skills/confluence-search/` | `git@github.com:carbonscott/slac-confluence-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries Confluence live) |
 | `skills/elog-search/` | `git@github.com:carbonscott/slac-elog-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries the eLog live) |
+| `skills/jira-search/` | `git@github.com:carbonscott/slac-jira-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries Jira live) |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
@@ -161,6 +163,9 @@ rsync -a --exclude='.uv-cache' \
 
 # elog-search — no data to sync (live API), same as confluence-search:
 #   ./deploy.sh elog-search
+
+# jira-search — no data to sync (live API), same as confluence-search:
+#   ./deploy.sh jira-search
 ```
 
 ## Key Config Details
@@ -460,6 +465,38 @@ falls straight through to the S3DF token, so no `--auth` flag is needed.
 **Trap worth knowing:** when no credential is usable the skill tells the user to run `kinit` or
 `s3df login`. Inside the sandbox `kinit` will never help — the ticket lands on the host and cannot
 cross the boundary. The fix is always `s3df login` **on the host**, then restart the sandbox.
+
+### jira-search
+
+| Copy | Path |
+|------|------|
+| Deployed (opencode skill) | `/sdf/group/lcls/ds/dm/apps/dev/opencode/skills/jira-search/SKILL.md` |
+| Deployed (claude skill) | `/sdf/group/lcls/ds/dm/apps/dev/claude/skills/jira-search/SKILL.md` |
+| Upstream repo | `git@github.com:carbonscott/slac-jira-search.git` (manifest entry; staging clone under `/tmp/skill-deploy-$USER/`) |
+
+Live JQL search of `jira.slac.stanford.edu` (Jira Data Center 10.3). Results are filtered by the
+invoking user's own project permissions, so two people running the same query legitimately see
+different issue counts. `jqlsearch.py whoami` says which identity is in play.
+
+**Read-only-ness lives in the code, not in the token.** A Jira personal access token carries its
+owner's *full* permissions — Jira Data Center has no read-only PAT — so unlike elog-search there is
+no allowlist to lean on. Instead every request in `scripts/jqlsearch.py` is a plain GET except one:
+`Client.search()` POSTs because Jira's JQL endpoint takes its query in a request body. That single
+body-bearing call creates, edits, transitions and deletes nothing, and the audit that keeps it that
+way is a one-line grep over `scripts/` for a second `Request(..., data=...)`. Do not add one.
+
+**Credential: the user's own Jira PAT**, installed with the sibling `scripts/jira-login`. It lands
+in `~/.config/jira-search/token`; `$JIRA_TOKEN` and `$JIRA_TOKEN_FILE` override it, in that order.
+No shared default and no shared-account fallback. The reader refuses any token file with group or
+other bits set (`mode & 0o077`), because these group trees are setgid and group-writable and an
+inherited umask leaks the token quietly.
+
+**Sandbox: the token is copied, like the Confluence one — not bound like the S3DF one.**
+`jira-login --force` unlinks and re-creates the file with `O_CREAT|O_EXCL`, so the inode changes
+and a read-only bind would go stale on the next rotation. `sandbox/bin/opencode-sandbox` installs
+the host token at mode 600 under the scratch home and exports `JIRA_TOKEN_FILE` at the copy; the
+skill checks that variable before it consults the passwd database, which is what makes it resolve
+at all inside a container that does not bind `/sdf/home`.
 
 ### commands (approval, clarify, taskify, clarify-before-research)
 
