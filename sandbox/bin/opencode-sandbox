@@ -157,6 +157,26 @@ if [[ -f "$HOST_CONFLUENCE_TOKEN" ]]; then
     fi
 fi
 
+# --- Copy the Jira token into the sandbox home ---
+# Same story as the Confluence token above: jira-search resolves its default
+# token path from the passwd database, which points at /sdf/home — not bound
+# here — so the copy plus JIRA_TOKEN_FILE is what makes it resolvable. Kept as
+# a separate block rather than folded into a loop so each skill's failure
+# message names the skill that will stop working.
+HOST_JIRA_TOKEN="${HOME}/.config/jira-search/token"
+SANDBOX_JIRA_TOKEN="${SCRATCH_HOME}/.config/jira-search/token"
+if [[ -f "$HOST_JIRA_TOKEN" ]]; then
+    mkdir -p "$(dirname "$SANDBOX_JIRA_TOKEN")"
+    chmod 700 "$(dirname "$SANDBOX_JIRA_TOKEN")"
+    # jqlsearch.py refuses any token file with group or other bits set, so do
+    # not let the ambient umask decide the mode.
+    if install -m 600 "$HOST_JIRA_TOKEN" "$SANDBOX_JIRA_TOKEN" 2>/dev/null; then
+        OPENCODE_ENV+=("JIRA_TOKEN_FILE=${SANDBOX_JIRA_TOKEN}")
+    else
+        echo "[sandbox] Warning: could not copy Jira token; jira-search will not authenticate" >&2
+    fi
+fi
+
 # --- Build bind mount list ---
 BINDS=()
 

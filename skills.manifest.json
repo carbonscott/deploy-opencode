@@ -262,6 +262,21 @@
       }
     },
     {
+      "name": "jira-search",
+      "repo": "carbonscott/slac-jira-search",
+      "ref": "main",
+      "cron": null,
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/jira-search",
+        "name": "jira-search",
+        "kind": "skill",
+        "slug": "jira-search",
+        "description_auto": "Search SLAC Jira live using JQL (Jira Query Language) via the REST search API. Covers every project your account can see (195 projects, ~55,000 issues), with each issue's description and full comment thread. Use for questions about LCLS/TID/ECS/DAQ tickets, detector and hardware builds, experiment tooling, \"what is the status of X\", \"who is working on X\", \"what broke and how was it fixed\", \"find the ticket about X\", or reading one issue end to end.",
+        "description_menu": "Search SLAC Jira live with JQL, read-only: issues, status, owners and comment threads, in every project you can see."
+      }
+    },
+    {
       "name": "elog-search",
       "repo": "carbonscott/slac-elog-search",
       "ref": "main",
