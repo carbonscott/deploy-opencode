@@ -27,7 +27,7 @@ export CLAUDE_BIN_ROOT="${CLAUDE_BIN_ROOT:-$CLAUDE_TREE_ROOT/bin}"
 # The version published by default. Pinned rather than tracking `stable` or
 # `latest`: a bump is a deliberate act with its own verification round, not a
 # side effect of running this tool on a different day.
-export CLAUDE_BINARY_PIN="${CLAUDE_BINARY_PIN:-2.1.235}"
+export CLAUDE_BINARY_PIN="${CLAUDE_BINARY_PIN:-2.1.267}"
 
 # Platform key in Anthropic's release manifest. S3DF is RHEL 8.10 x86-64 with
 # glibc 2.28; the binary needs only libc/libm/libpthread/libdl/librt, so the

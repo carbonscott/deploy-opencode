@@ -145,6 +145,80 @@ so the next `claude-lcls` invocation picks up the flip.
 
 ---
 
+## Pin history
+
+| Pin | Date | State | Why |
+|---|---|---|---|
+| 2.1.235 | 2026-08-28 | published, active | First publish. Every measurement in this repo was made against it. |
+| 2.1.267 | 2026-09-19 | **staged and verified, NOT published** | `promptCacheTtl`. |
+
+### 2.1.267 — the `promptCacheTtl` bump
+
+`env.sh` now pins `2.1.267`, the `stable` channel as of 2026-09-19 (`latest` was
+2.1.278; stable is the deliberate choice this doc's version policy asks for).
+
+Reason for the bump: `promptCacheTtl` gives the main conversation a one-hour
+prompt cache, and it requires Claude Code 2.1.242+. A string scan of 2.1.235
+finds **zero** occurrences of `promptCacheTtl`, `subagentPromptCacheTtl`, or
+`CLAUDE_CODE_PROMPT_CACHE_TTL`, and Claude Code ignores unknown settings keys in
+silence — so the key would have read as working and done nothing.
+
+Verified on the staged binary before any write to the deployment:
+
+| Key | 2.1.235 | 2.1.267 |
+|---|---:|---:|
+| `promptCacheTtl` | 0 | 6 |
+| `subagentPromptCacheTtl` | 0 | 6 |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL` | 0 | 6 |
+| `modelSettings` | 0 | 7 |
+| `autoMemoryEnabled` | 5 | 6 |
+| `DISABLE_AUTOUPDATER` | 12 | 8 |
+| `showThinkingSummaries` | 3 | 5 |
+| `ANTHROPIC_DEFAULT_FABLE_MODEL` | 27 | 15 |
+
+(Occurrence counts in `strings` output. Presence is evidence a key still exists,
+not proof its default is unchanged.) Every setting `install-claude-lcls.sh`
+writes survives the bump, and 2.1.267 adds `modelSettings`, which 2.1.235 lacks.
+
+`fetch 2.1.267` verified the download against Anthropic's manifest:
+`0399c793ff571d5946ef923d80b4f330d05ac4b6842a6b0775468f5d389403c0`, 217,013,744
+bytes — note this release is **smaller** than 2.1.235's 330,946,864, still well
+inside the tool's 100 MB–1 GB band.
+
+**Not yet done:** `publish 2.1.267` and `activate 2.1.267`. Until those run,
+`current -> versions/2.1.235` and the `promptCacheTtl` now written by
+`install-claude-lcls.sh` and `settings.template.json` is inert for anyone who
+installs. Finish with:
+
+```bash
+P=tools/claude-binary/scripts/publish-claude-binary.sh
+source tools/claude-binary/env.sh
+CLAUDE_BINARY_ALLOW_PROD=1 $P publish  2.1.267 --yes-really-publish
+CLAUDE_BINARY_ALLOW_PROD=1 $P activate 2.1.267 --yes-really-publish
+CLAUDE_BINARY_ALLOW_PROD=1 $P installer --yes-really-publish   # ships the new installer
+$P verify && $P list
+```
+
+Then confirm the hour actually reaches the gateway — the binary having the key is
+necessary, not sufficient, because part of the one-hour request rides in the
+`anthropic-beta` header:
+
+```bash
+claude-lcls -p "hello" --output-format json | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["usage"]["cache_creation"])'
+```
+
+Non-zero `ephemeral_1h_input_tokens` is success. If it lands under
+`ephemeral_5m_input_tokens`, try removing `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`
+before blaming the gateway, and drop `promptCacheTtl` rather than leave a setting
+that reads as working. Rollback stays `activate 2.1.235`.
+
+After activating, re-measure the `[1m]` context-window table in
+`docs/claude-code-lcls-setup.md`: those numbers were taken on 2.1.235, and newer
+Claude Code may report 1M from the plain Sonnet 5 id.
+
+---
+
 ## What is deliberately NOT backed up
 
 `claude/bin/` is outside `deploy-backup.sh`'s at-risk set, and must stay outside.
