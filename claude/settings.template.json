@@ -4,7 +4,15 @@
   "// _1_": "SLAC AI Gateway config for Claude Code. See docs/claude-code-lcls-setup.md.",
   "// _2_": "Pick ONE auth method: apiKeyHelper (recommended, key stays in the key file)",
   "// _3_": "or env.ANTHROPIC_AUTH_TOKEN (paste). Delete the one you do not use.",
-  "// _4_": "Never commit a real key. Model ids verified against the gateway 2026-08-26.",
+  "// _4_": "Never commit a real key. Model ids verified against the gateway 2026-09-19.",
+  "// _5_": "The [1m] suffix is what buys the 1M context window. Measured on 2.1.235: a",
+  "// _6_": "plain us.anthropic.claude-sonnet-5 reports contextWindow 200000 and the",
+  "// _7_": "suffixed form reports 1000000, both succeeding -- Claude Code strips the",
+  "// _8_": "suffix before it reaches the gateway. Do NOT copy these suffixed ids into",
+  "// _9_": "opencode.json: opencode does not strip it and the gateway answers a",
+  "// _10_": "suffixed id with 400 Invalid model name.",
+  "// _11_": "promptCacheTtl needs Claude Code 2.1.242+; on 2.1.235 it is silently",
+  "// _12_": "ignored. The shared binary pin lives in tools/claude-binary/env.sh.",
 
   "apiKeyHelper": "cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat",
 
@@ -14,12 +22,15 @@
     "// ANTHROPIC_AUTH_TOKEN": "PASTE-YOUR-SLAC-API-KEY-HERE (only if you delete apiKeyHelper above)",
 
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",
 
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   },
+
+  "promptCacheTtl": "1h",
 
   "skipWebFetchPreflight": true,
 

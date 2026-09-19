@@ -536,11 +536,31 @@ step "Config dir: $LCLS_DIR"
 #   showThinkingSummaries false     no API-side thinking summaries.
 #   autoMemoryEnabled false         Claude neither reads nor writes the
 #                                   auto-memory directory.
-# MODEL WIRING. The three ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
-# opus / sonnet / haiku aliases onto the Bedrock ids the SLAC gateway serves, so
-# /model opus selects Opus 5 and /model sonnet selects Sonnet 5. The gateway
-# offers more than those three -- Opus 4.8, 4.7, 4.6 and Sonnet 4.6 are all live
-# on it -- but an alias can only point at one id.
+# MODEL WIRING. The four ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
+# opus / sonnet / haiku / fable aliases onto the Bedrock ids the SLAC gateway
+# serves, so /model opus selects Opus 5, /model sonnet selects Sonnet 5 and
+# /model fable selects Fable 5.1. The gateway offers more than those four --
+# Opus 4.8, 4.7, 4.6 and Sonnet 4.6 are all live on it -- but an alias can only
+# point at one id.
+#
+# ANTHROPIC_DEFAULT_FABLE_MODEL also makes /model best resolve to Fable 5.1,
+# since `best` means "Fable where available, otherwise Opus". Anthropic's docs
+# say the fable alias wants 2.1.257+, but 2.1.235 resolved both `fable` and
+# `best` to us.anthropic.claude-fable-5-1 once this var was set -- measured
+# 2026-09-19, not inferred.
+#
+# THE [1m] SUFFIX IS LOAD-BEARING, and only here. Measured on 2.1.235 against
+# this gateway: a plain us.anthropic.claude-sonnet-5 reports contextWindow
+# 200000 while us.anthropic.claude-sonnet-5[1m] reports 1000000, and both
+# return a completion -- Claude Code strips the suffix before the request
+# leaves. Fable 5.1 behaves the same way. Newer binaries may report 1M from the
+# plain id, so re-measure with `--output-format json` after a pin bump rather
+# than assuming either form.
+#
+# Do NOT carry these suffixed ids into opencode.json. opencode does not strip
+# the suffix, and the gateway answers slac/us.anthropic.claude-opus-5[1m] with
+# 400 Invalid model name passed in model=... Use the plain id there; it already
+# advertises 1M input / 128k output.
 #
 # ANTHROPIC_CUSTOM_MODEL_OPTION is how anything else reaches the picker. Claude
 # Code APPENDS it to the model list rather than replacing an entry, using
@@ -550,8 +570,30 @@ step "Config dir: $LCLS_DIR"
 # explicitly with `claude-lcls --model us.anthropic.claude-opus-4-8`; the slot
 # only decides what appears in the menu without being typed.
 #
-# All four ids were answered by the gateway on 2026-08-28: opus-5[1m],
-# sonnet-5, sonnet-4-6 and opus-4-8 each returned a completion, exit 0.
+# All five ids were answered by the gateway on 2026-09-19: opus-5[1m],
+# sonnet-5[1m], fable-5-1[1m], sonnet-4-6 and haiku-4-5 each returned a
+# completion, exit 0. `GET /v1/models` lists fable-5-1, opus-5 and sonnet-5 at
+# 1M input / 128k output.
+#
+# PROMPT CACHE TTL. promptCacheTtl "1h" keeps the main conversation's cached
+# prefix alive through an hour-long gap instead of five minutes, which is what
+# an idle-then-resume session wants; 1h cache writes bill at 2x base input
+# against 1.25x for 5m, so it costs more on short bursts that never idle.
+#
+# It is scoped to the MAIN CONVERSATION only. Subagents, compaction and session
+# titles keep the five-minute default because subagentPromptCacheTtl is left
+# unset deliberately. The older ENABLE_PROMPT_CACHING_1H=1 applies the hour to
+# both buckets at once and is the 2.1.235-compatible fallback.
+#
+# promptCacheTtl NEEDS 2.1.242+. A scan of 2.1.235 finds zero occurrences of
+# promptCacheTtl, subagentPromptCacheTtl or CLAUDE_CODE_PROMPT_CACHE_TTL, so on
+# that binary this key is one of the silently-ignored near-misses described
+# below. 2.1.267 has all three. Confirm the hour actually reaches the gateway
+# with `claude -p hello --output-format json` and a non-zero
+# usage.cache_creation.ephemeral_1h_input_tokens -- part of the 1h request rides
+# in the anthropic-beta header, so a gateway that drops that header, or
+# CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS above, can leave it at 5m while
+# everything still appears to work.
 #
 #   env.DISABLE_AUTOUPDATER "1"     no self-update. Belt and braces: the updater
 #                                   is ALREADY off without it, because
@@ -563,6 +605,15 @@ step "Config dir: $LCLS_DIR"
 # verbose and showThinkingSummaries pin what 2.1.235 already defaults to; the
 # other three change behaviour. Auto-memory in particular is ON unless this
 # says otherwise.
+#
+# The shared pin moved from 2.1.235 to 2.1.267 on 2026-09-19 (see
+# tools/claude-binary/env.sh) to get promptCacheTtl. A string scan of 2.1.267
+# still finds autoMemoryEnabled, showThinkingSummaries and DISABLE_AUTOUPDATER,
+# so every key written below survives the bump. Two caveats: a key's presence in
+# the binary is not proof its DEFAULT is unchanged, and the "already defaults to"
+# claim a few lines up was measured on 2.1.235 only. 2.1.267 additionally has
+# modelSettings, which 2.1.235 lacks entirely -- that is the mechanism if a
+# per-model default effort level is ever wanted here.
 #
 # Two things measured against the 2.1.235 binary that are easy to get wrong:
 #
@@ -593,8 +644,9 @@ read -r -d '' SETTINGS_JSON <<EOF || true
   "env": {
     "ANTHROPIC_BASE_URL": "$BASE_URL",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",
     "ANTHROPIC_CUSTOM_MODEL_OPTION": "us.anthropic.claude-sonnet-4-6",
     "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Sonnet 4.6",
     "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "Previous Sonnet, kept selectable via the SLAC gateway",
@@ -602,6 +654,8 @@ read -r -d '' SETTINGS_JSON <<EOF || true
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "DISABLE_AUTOUPDATER": "1"
   },
+
+  "promptCacheTtl": "1h",
 
   "skipWebFetchPreflight": true,
 

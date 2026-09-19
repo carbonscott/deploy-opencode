@@ -429,10 +429,11 @@ curl -s -H "x-api-key: $K" https://ai-api.slac.stanford.edu/v1/models \
   | python3 -c 'import json,sys; [print(m["id"]) for m in json.load(sys.stdin)["data"]]'
 ```
 
-Anthropic models served as of **2026-08-26** (`GET /v1/models` → `200`):
+Anthropic models served as of **2026-09-19** (`GET /v1/models` → `200`):
 
 | Model ID | Max input | Max output | Verified |
 |---|---:|---:|---|
+| `us.anthropic.claude-fable-5-1` | 1,000,000 | 128,000 | listed + completion via `--model fable` |
 | `us.anthropic.claude-opus-5` | 1,000,000 | 128,000 | listed + `POST /v1/messages` → `200` |
 | `us.anthropic.claude-opus-4-8` | 1,000,000 | 128,000 | listed |
 | `us.anthropic.claude-opus-4-7` | 1,000,000 | 128,000 | listed |
@@ -445,8 +446,16 @@ The gateway also serves OpenAI, Gemma, Nova, Llama, and Stability models — see
 the listing. Those are not usable from Claude Code, which speaks the Anthropic
 Messages API.
 
-**Claude 5 is available.** The previously documented pins (Sonnet 4.6, Opus 4.8)
-still work but are a generation behind; the template uses Opus 5 and Sonnet 5.
+**Claude 5 is available, including Fable 5.1.** The previously documented pins
+(Sonnet 4.6, Opus 4.8) still work but are a generation behind; the template uses
+Opus 5, Sonnet 5, and Fable 5.1.
+
+Fable 5.1 reaches the picker through `ANTHROPIC_DEFAULT_FABLE_MODEL`, which also
+makes `--model best` resolve to it (`best` means "Fable where available,
+otherwise Opus"). Anthropic's docs say the `fable` alias requires Claude Code
+2.1.257+, but **2.1.235 resolved both `fable` and `best` to
+`us.anthropic.claude-fable-5-1` once the var was set** — measured 2026-09-19 with
+`--output-format json`, reading the `modelUsage` key back.
 
 ### The `[1m]` suffix
 
@@ -461,13 +470,49 @@ still work but are a generation behind; the template uses Opus 5 and Sonnet 5.
 - `claude --model "opus[1m]"` also succeeds.
 
 So the template's `us.anthropic.claude-opus-5[1m]` is correct *for settings.json*
-and would be wrong in a hand-rolled curl. Note the gateway already advertises
-`max_input_tokens: 1000000` for `us.anthropic.claude-opus-5` regardless, so the
-suffix is belt-and-braces. **Not independently verified:** whether the suffix
-changes the effective context window when going through this gateway, as opposed
-to being a no-op the gateway ignores.
+and would be wrong in a hand-rolled curl.
 
-### All three `ANTHROPIC_DEFAULT_*_MODEL` vars are required
+**The suffix is not belt-and-braces — it is load-bearing.** Measured 2026-09-19 on
+2.1.235 through this gateway, reading `modelUsage[...].contextWindow` back from
+`--output-format json`:
+
+| Pin | Reported context window |
+|---|---:|
+| `us.anthropic.claude-sonnet-5` | 200,000 |
+| `us.anthropic.claude-sonnet-5[1m]` | 1,000,000 |
+| `us.anthropic.claude-fable-5-1` | 200,000 |
+| `us.anthropic.claude-fable-5-1[1m]` | 1,000,000 |
+| `us.anthropic.claude-opus-5[1m]` | 1,000,000 |
+
+Both forms return a completion, so the un-suffixed pin fails silently by running
+at a fifth of the advertised window. This supersedes the earlier note that the
+suffix might be a no-op: it is not.
+
+**Re-measured on 2.1.267 after the pin bump, and the suffix is still required.**
+Anthropic's docs say Sonnet 5 carries the 1M window natively with no `[1m]`
+variant to select; through this gateway that does not hold. Plain
+`us.anthropic.claude-sonnet-5`, `...opus-5` and `...fable-5-1` each report
+200,000 on 2.1.267, and all three report 1,000,000 with the suffix. Keep
+re-measuring on future bumps — this is observed gateway behaviour, not a
+documented contract.
+
+`--model best` resolves to `us.anthropic.claude-fable-5-1[1m]` at 1,000,000.
+`haiku` reports 200,000, which is Haiku 4.5's native size on the gateway rather
+than a missing suffix.
+
+`max_output_tokens` stays at 64,000 in every case even though the gateway
+advertises 128,000. `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is the likely lever; untested.
+
+### Never carry `[1m]` into `opencode.json`
+
+The suffix is a Claude Code client-side convention. opencode does **not** strip
+it, so `slac/us.anthropic.claude-opus-5[1m]` reaches the gateway verbatim and
+returns `400 Invalid model name passed in model=us.anthropic.claude-opus-5[1m]`.
+Use the plain id in `opencode.json`; it already advertises 1M input / 128k output,
+recorded there in each model's `limit` block. Copying an env var out of
+`settings.template.json` into `opencode.json` is the specific mistake to avoid.
+
+### All four `ANTHROPIC_DEFAULT_*_MODEL` vars are required
 
 Omitting one is not harmless. With `ANTHROPIC_DEFAULT_HAIKU_MODEL` unset,
 `claude --model haiku` resolves to Anthropic's public id
@@ -479,6 +524,50 @@ API Error: 400 ... Invalid model name passed in model=claude-haiku-4-5-20251001
 
 Haiku is what Claude Code uses for background work (titles, summaries), so an
 unset haiku var produces intermittent errors even when your main model works.
+
+`ANTHROPIC_DEFAULT_FABLE_MODEL` fails differently: rather than erroring, `/model
+fable` and `/model best` simply do not reach Fable 5.1, so you silently keep
+whatever the previous alias resolved to.
+
+### One-hour prompt cache
+
+`promptCacheTtl: "1h"` keeps the main conversation's cached prefix alive through
+an hour-long gap instead of five minutes, which is what an idle-then-resume
+session wants. One-hour cache writes bill at 2x base input against 1.25x for the
+five-minute default, so it costs more on short bursts that never idle past five
+minutes and saves on sessions left and picked back up.
+
+It covers the **main conversation only**. Subagents, compaction, and session
+titles keep the five-minute default, because `subagentPromptCacheTtl` is left
+unset deliberately. The older `ENABLE_PROMPT_CACHING_1H=1` env var applies the
+hour to both buckets at once.
+
+**Version floor: 2.1.242.** A string scan of 2.1.235 finds zero occurrences of
+`promptCacheTtl`, `subagentPromptCacheTtl`, or `CLAUDE_CODE_PROMPT_CACHE_TTL`;
+2.1.267 has all three. Since Claude Code ignores unknown settings keys in
+silence, writing this key on 2.1.235 reads as working and does nothing. The
+shared pin lives in `tools/claude-binary/env.sh` and moved to 2.1.267 on
+2026-09-19 for exactly this reason.
+
+**Measured working on 2.1.267 through this gateway**, with the `sonnet`, `opus`
+and `fable` aliases returning 50,886 / 39,032 / 40,240 `ephemeral_1h_input_tokens`
+and zero `ephemeral_5m_input_tokens`. The `anthropic-beta` header survives the
+gateway, and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"` does not suppress it —
+that flag had been the main suspect.
+
+Confirm the hour actually reaches the gateway:
+
+```bash
+claude -p "hello" --output-format json | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["usage"]["cache_creation"])'
+```
+
+A non-zero `ephemeral_1h_input_tokens` is success; tokens landing under
+`ephemeral_5m_input_tokens` mean the hour did not take. Part of the one-hour
+request rides in the `anthropic-beta` header, so a gateway that rewrites or drops
+that header leaves you at five minutes with no error. The
+`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"` in this template is a second
+suspect worth toggling before blaming the gateway.
 
 ---
 
