@@ -149,8 +149,32 @@ so the next `claude-lcls` invocation picks up the flip.
 
 | Pin | Date | State | Why |
 |---|---|---|---|
-| 2.1.235 | 2026-08-28 | published, active | First publish. Every measurement in this repo was made against it. |
-| 2.1.267 | 2026-09-19 | **staged and verified, NOT published** | `promptCacheTtl`. |
+| 2.1.235 | 2026-08-28 | published, kept as rollback target | First publish. Measurements in this repo dated before 2026-09-19 were made against it. |
+| 2.1.267 | 2026-09-19 | **published and active** | `promptCacheTtl`, which needs 2.1.242+. |
+
+### A `verify` FAIL that is expected, not a defect
+
+`verify` compares the deployed installer against `INSTALLER_REF`, which defaults
+to `origin/main`. Publishing the installer from a branch therefore **fails that
+one check until the branch merges**, while every other check passes:
+
+```
+FAIL: published installer differs from origin/main (6cdee80)
+```
+
+That is the check doing its job — it exists to catch a live installer that was
+hand-edited or shipped from a tree nobody can reproduce. To confirm the deployed
+copy really is the reviewed commit rather than something unrecorded, point it at
+the branch:
+
+```bash
+INSTALLER_REF=origin/<branch> $P verify      # all checks passed
+```
+
+If that passes and the `origin/main` form does not, the only outstanding work is
+merging. If it fails against both, something genuinely diverged — compare
+`md5sum` of the deployed file against `git show <ref>:claude/install-claude-lcls.sh`
+to see which side moved.
 
 ### 2.1.267 — the `promptCacheTtl` bump
 
@@ -185,10 +209,7 @@ writes survives the bump, and 2.1.267 adds `modelSettings`, which 2.1.235 lacks.
 bytes — note this release is **smaller** than 2.1.235's 330,946,864, still well
 inside the tool's 100 MB–1 GB band.
 
-**Not yet done:** `publish 2.1.267` and `activate 2.1.267`. Until those run,
-`current -> versions/2.1.235` and the `promptCacheTtl` now written by
-`install-claude-lcls.sh` and `settings.template.json` is inert for anyone who
-installs. Finish with:
+Published, activated and the installer shipped on 2026-09-19, in that order:
 
 ```bash
 P=tools/claude-binary/scripts/publish-claude-binary.sh
@@ -199,23 +220,56 @@ CLAUDE_BINARY_ALLOW_PROD=1 $P installer --yes-really-publish   # ships the new i
 $P verify && $P list
 ```
 
-Then confirm the hour actually reaches the gateway — the binary having the key is
-necessary, not sufficient, because part of the one-hour request rides in the
-`anthropic-beta` header:
+The order matters and is worth repeating on the next bump: `publish` lands the
+binary without touching `current`, which leaves a window to exercise the new
+version at `versions/<ver>` directly before any ps-users member is switched onto
+it. Both gateway checks below were run in that window, against
+`bin/versions/2.1.267` rather than `bin/current`.
+
+### The one-hour cache reaches the gateway
+
+The binary having `promptCacheTtl` is necessary, not sufficient: part of the
+one-hour request rides in the `anthropic-beta` header, which a gateway is free to
+drop. Measured with `promptCacheTtl: "1h"` on 2.1.267:
+
+| Alias | `ephemeral_1h_input_tokens` | `ephemeral_5m_input_tokens` |
+|---|---:|---:|
+| sonnet | 50,886 | 0 |
+| opus | 39,032 | 0 |
+| fable | 40,240 | 0 |
+
+**The hour takes, and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"` does not block
+it** — that flag had been the main suspect. Re-check after any gateway change
+with:
 
 ```bash
 claude-lcls -p "hello" --output-format json | python3 -c \
   'import json,sys; print(json.load(sys.stdin)["usage"]["cache_creation"])'
 ```
 
-Non-zero `ephemeral_1h_input_tokens` is success. If it lands under
-`ephemeral_5m_input_tokens`, try removing `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`
-before blaming the gateway, and drop `promptCacheTtl` rather than leave a setting
-that reads as working. Rollback stays `activate 2.1.235`.
+Tokens landing under `ephemeral_5m_input_tokens` mean the hour did not take; drop
+`promptCacheTtl` rather than leave a setting that reads as working. Rollback for
+the binary itself stays `activate 2.1.235`.
 
-After activating, re-measure the `[1m]` context-window table in
-`docs/claude-code-lcls-setup.md`: those numbers were taken on 2.1.235, and newer
-Claude Code may report 1M from the plain Sonnet 5 id.
+### `[1m]` is still required on 2.1.267
+
+Re-measured after activating, because the table in
+`docs/claude-code-lcls-setup.md` had been taken on 2.1.235 and current Anthropic
+docs say Sonnet 5 carries 1M natively with no variant to select. Through this
+gateway it does not:
+
+| Pin on 2.1.267 | Reported context window |
+|---|---:|
+| `us.anthropic.claude-sonnet-5` | 200,000 |
+| `us.anthropic.claude-opus-5` | 200,000 |
+| `us.anthropic.claude-fable-5-1` | 200,000 |
+| the same three with `[1m]` | 1,000,000 |
+
+So the suffix is not a 2.1.235 artefact and the pins in
+`claude/settings.template.json` are correct as written. `--model best` resolves to
+`us.anthropic.claude-fable-5-1[1m]` at 1M; `haiku` sits at 200,000, which is its
+native size on the gateway rather than a missing suffix. Keep re-measuring this on
+future bumps — it is a gateway behaviour, not a documented contract.
 
 ---
 

@@ -486,9 +486,19 @@ and would be wrong in a hand-rolled curl.
 
 Both forms return a completion, so the un-suffixed pin fails silently by running
 at a fifth of the advertised window. This supersedes the earlier note that the
-suffix might be a no-op: it is not. Newer Claude Code may report 1M from the
-plain id — current docs say Sonnet 5 carries 1M natively — so **re-measure after
-a binary pin bump** rather than assuming either form.
+suffix might be a no-op: it is not.
+
+**Re-measured on 2.1.267 after the pin bump, and the suffix is still required.**
+Anthropic's docs say Sonnet 5 carries the 1M window natively with no `[1m]`
+variant to select; through this gateway that does not hold. Plain
+`us.anthropic.claude-sonnet-5`, `...opus-5` and `...fable-5-1` each report
+200,000 on 2.1.267, and all three report 1,000,000 with the suffix. Keep
+re-measuring on future bumps — this is observed gateway behaviour, not a
+documented contract.
+
+`--model best` resolves to `us.anthropic.claude-fable-5-1[1m]` at 1,000,000.
+`haiku` reports 200,000, which is Haiku 4.5's native size on the gateway rather
+than a missing suffix.
 
 `max_output_tokens` stays at 64,000 in every case even though the gateway
 advertises 128,000. `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is the likely lever; untested.
@@ -536,7 +546,14 @@ hour to both buckets at once.
 `promptCacheTtl`, `subagentPromptCacheTtl`, or `CLAUDE_CODE_PROMPT_CACHE_TTL`;
 2.1.267 has all three. Since Claude Code ignores unknown settings keys in
 silence, writing this key on 2.1.235 reads as working and does nothing. The
-shared pin lives in `tools/claude-binary/env.sh`.
+shared pin lives in `tools/claude-binary/env.sh` and moved to 2.1.267 on
+2026-09-19 for exactly this reason.
+
+**Measured working on 2.1.267 through this gateway**, with the `sonnet`, `opus`
+and `fable` aliases returning 50,886 / 39,032 / 40,240 `ephemeral_1h_input_tokens`
+and zero `ephemeral_5m_input_tokens`. The `anthropic-beta` header survives the
+gateway, and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"` does not suppress it —
+that flag had been the main suspect.
 
 Confirm the hour actually reaches the gateway:
 
