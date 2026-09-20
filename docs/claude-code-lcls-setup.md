@@ -529,6 +529,43 @@ unset haiku var produces intermittent errors even when your main model works.
 fable` and `/model best` simply do not reach Fable 5.1, so you silently keep
 whatever the previous alias resolved to.
 
+### Re-running the installer keeps your own keys
+
+`install-claude-lcls.sh` **merges** this template into an existing
+`~/.claude-lcls/settings.json` rather than replacing it. Keys the template
+defines are updated -- that is how a new model pin or cache setting reaches
+everyone. Keys it does not define survive, including nested ones, so a personal
+`theme`, `model`, `effortLevel`, or an extra `env` var of your own is not lost.
+The run prints what it kept:
+
+```
+  ok  merged the shared template into ~/.claude-lcls/settings.json (mode 600)
+  ok  kept your local-only key(s): env.MY_OWN_VAR model effortLevel theme
+  ok  previous copy: ~/.claude-lcls/settings.json.bak-20260920103000
+```
+
+A backup is written only when the merge actually changes something, so
+re-running on an up-to-date file leaves no litter. `--reset` opts out and
+rebuilds the canonical file, discarding local-only keys (after a backup).
+
+Three consequences worth knowing:
+
+- **`theme`, `model` and `effortLevel` are deliberately absent from the
+  template.** They are personal choices, and for some people the theme is an
+  accessibility requirement rather than a preference. Do not add them: a shared
+  default would silently override every user on their next re-run.
+- **Removing a key from the template no longer removes it from existing users.**
+  Retiring a setting takes an explicit prune or a `--reset`, not just a deletion.
+- **If your settings.json is not valid JSON, the merge refuses and changes
+  nothing**, telling you where the parse failed. Fix it, or use `--reset`.
+
+The merge runs on the shared uv-managed Python
+(`/sdf/group/lcls/ds/dm/apps/dev/bin/uv run --python 3.11`, resolved against
+`/sdf/group/lcls/ds/dm/apps/dev/python` so nothing is downloaded), the same
+centralized interpreter the deployed skills use. It falls back to a system
+`python3`, and if no interpreter can parse JSON it writes the template wholesale
+and says so rather than refusing to install.
+
 ### One-hour prompt cache
 
 `promptCacheTtl: "1h"` keeps the main conversation's cached prefix alive through
