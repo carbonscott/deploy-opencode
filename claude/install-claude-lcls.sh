@@ -27,6 +27,13 @@
 #   ./install-claude-lcls.sh              # install (safe to re-run)
 #   ./install-claude-lcls.sh --uninstall  # remove it again
 #   ./install-claude-lcls.sh --dry-run    # show what would happen, write nothing
+#   ./install-claude-lcls.sh --reset      # rebuild settings.json from the
+#                                         # template, discarding local-only keys
+#
+# Re-running is genuinely safe for settings.json: the shared template is MERGED
+# into your existing file, so keys the template does not define -- your theme,
+# your model, your effortLevel, any env var you added -- survive. The template
+# wins for the keys it does define. --reset opts out and rewrites wholesale.
 #
 # Requirements: membership in `ps-users` and the SLAC network or VPN. The script
 # checks both — plus that the shared binary runs — before writing anything.
@@ -42,6 +49,7 @@ BASE_URL="${BASE_URL:-https://ai-api.slac.stanford.edu}"
 FUNC_NAME="${FUNC_NAME:-claude-lcls}"
 SKILLS_SRC="${SKILLS_SRC:-/sdf/group/lcls/ds/dm/apps/dev/claude/skills}"
 DRY_RUN="${DRY_RUN:-0}"
+RESET="${RESET:-0}"
 
 # The shared team binary. A symlink into bin/versions/<ver>, so a version bump
 # or a rollback is a symlink flip on the deploy side and needs no change here
@@ -60,6 +68,14 @@ SHARED_BIN="${SHARED_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
 # APPENDED, not prepended, on purpose: a user who already has their own uv keeps
 # it. This only fills a gap, it never overrides a choice someone made.
 SHARED_TOOLS_BIN="${SHARED_TOOLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/bin}"
+
+# The shared uv-managed Python installs, and which one to use for the
+# settings.json merge below. Pointing UV_PYTHON_INSTALL_DIR here means `uv run
+# --python 3.11` resolves against the team's existing interpreters instead of
+# downloading one -- compute nodes have no default internet route, so a fetch
+# would be a latent failure rather than a slow success.
+SHARED_PYTHON_DIR="${SHARED_PYTHON_DIR:-/sdf/group/lcls/ds/dm/apps/dev/python}"
+SHARED_PYTHON="${SHARED_PYTHON:-3.11}"
 
 # Escape hatch, opt-in only. Set CLAUDE_LCLS_BIN to run claude-lcls against some
 # other binary — testing this script, or pinning an older version during an
@@ -305,6 +321,7 @@ for arg in "$@"; do
   case "$arg" in
     --uninstall) MODE=uninstall ;;
     --dry-run)   DRY_RUN=1 ;;
+    --reset)     RESET=1 ;;
     -h|--help)   usage; exit 0 ;;
     *)           die "unknown argument: $arg (try --help)" ;;
   esac
@@ -675,15 +692,139 @@ read -r -d '' SETTINGS_JSON <<EOF || true
 }
 EOF
 
+SETTINGS_DST="$LCLS_DIR/settings.json"
+
 if [ "$DRY_RUN" = 1 ]; then
-  echo "  (dry-run) would create $LCLS_DIR/settings.json:"
+  if [ -f "$SETTINGS_DST" ] && [ "$RESET" = 0 ]; then
+    echo "  (dry-run) would MERGE this template into the existing $SETTINGS_DST,"
+    echo "  (dry-run) keeping every key the template does not define (--reset to overwrite):"
+  else
+    echo "  (dry-run) would create $SETTINGS_DST:"
+  fi
   echo "$SETTINGS_JSON" | sed 's/^/      /'
 else
   mkdir -p "$LCLS_DIR"
   chmod 700 "$LCLS_DIR"
-  printf '%s\n' "$SETTINGS_JSON" > "$LCLS_DIR/settings.json"
-  chmod 600 "$LCLS_DIR/settings.json"
-  ok "wrote $LCLS_DIR/settings.json (mode 600)"
+
+  # Merging needs a JSON parser. Prefer the SHARED uv-managed python -- the same
+  # centralized interpreter the deployed skills reach for -- so the result does
+  # not depend on whatever python a given login node happens to ship. Measured
+  # under `env -i PATH=/usr/bin:/bin`: 3.11.14 in ~50 ms, nothing fetched,
+  # because UV_PYTHON_INSTALL_DIR points at the shared install dir.
+  #
+  # Same resolution shape as skills/docs-search/scripts/docs-index: try the
+  # shared copy first, then whatever is on PATH, then give up loudly. The system
+  # python3 on S3DF is 3.6.8, which parses JSON fine but is not something to
+  # depend on by choice.
+  MERGE_CMD=()
+  if [ -x "$SHARED_TOOLS_BIN/uv" ] \
+     && UV_PYTHON_INSTALL_DIR="$SHARED_PYTHON_DIR" "$SHARED_TOOLS_BIN/uv" \
+          run --python "$SHARED_PYTHON" --no-project python -c 'import json' >/dev/null 2>&1; then
+    MERGE_CMD=(env "UV_PYTHON_INSTALL_DIR=$SHARED_PYTHON_DIR" "$SHARED_TOOLS_BIN/uv" \
+               run --python "$SHARED_PYTHON" --no-project python)
+  else
+    for _cand in python3 /usr/bin/python3; do
+      if command -v "$_cand" >/dev/null 2>&1 && "$_cand" -c 'import json' >/dev/null 2>&1; then
+        MERGE_CMD=("$_cand"); break
+      fi
+    done
+  fi
+
+  if [ ! -f "$SETTINGS_DST" ]; then
+    printf '%s\n' "$SETTINGS_JSON" > "$SETTINGS_DST"
+    chmod 600 "$SETTINGS_DST"
+    ok "wrote $SETTINGS_DST (mode 600)"
+  else
+    _bk="$SETTINGS_DST.bak-$(date +%Y%m%d%H%M%S)"
+    cp -p "$SETTINGS_DST" "$_bk"
+
+    if [ "$RESET" = 1 ] || [ ${#MERGE_CMD[@]} -eq 0 ]; then
+      printf '%s\n' "$SETTINGS_JSON" > "$SETTINGS_DST"
+      chmod 600 "$SETTINGS_DST"
+      if [ "$RESET" = 1 ]; then
+        ok "--reset: rebuilt $SETTINGS_DST from the template (previous copy: $_bk)"
+      else
+        warn "no JSON-capable python found, not even $SHARED_TOOLS_BIN/uv --"
+        warn "wrote the template wholesale. Any local-only keys are still in"
+        warn "$_bk; merge them back by hand."
+      fi
+    else
+      _tmpl="$(mktemp "${TMPDIR:-/tmp}/claude-lcls-tmpl.XXXXXX")"
+      _mrg="$(mktemp "${TMPDIR:-/tmp}/claude-lcls-merge.XXXXXX")"
+      printf '%s\n' "$SETTINGS_JSON" > "$_tmpl"
+      cat > "$_mrg" <<'MERGE_PYEOF'
+import collections, json, sys
+
+dst, tmpl = sys.argv[1], sys.argv[2]
+
+def load(path):
+    with open(path) as fh:
+        return json.load(fh, object_pairs_hook=collections.OrderedDict)
+
+try:
+    have = load(dst)
+except Exception as exc:
+    sys.stderr.write("existing settings.json is not valid JSON: %s\n" % exc)
+    sys.exit(3)
+want = load(tmpl)
+
+preserved = []
+
+def merge(base, over, path=""):
+    # Recursive, so a user-added entry inside "env" survives while the template
+    # still updates the env vars it actually names.
+    out = collections.OrderedDict()
+    for key, val in base.items():
+        full = path + key
+        if key in over:
+            if isinstance(val, dict) and isinstance(over[key], dict):
+                out[key] = merge(val, over[key], full + ".")
+            else:
+                out[key] = over[key]
+        else:
+            out[key] = val
+            preserved.append(full)
+    for key, val in over.items():
+        if key not in out:
+            out[key] = val
+    return out
+
+merged = merge(have, want)
+with open(dst, "w") as fh:
+    json.dump(merged, fh, indent=2)
+    fh.write("\n")
+print(" ".join(preserved))
+MERGE_PYEOF
+
+      set +e
+      _kept="$("${MERGE_CMD[@]}" "$_mrg" "$SETTINGS_DST" "$_tmpl" 2>&1)"
+      _rc=$?
+      set -e
+
+      if [ $_rc -eq 0 ]; then
+        chmod 600 "$SETTINGS_DST"
+        ok "merged the shared template into $SETTINGS_DST (mode 600)"
+        if [ -n "$_kept" ]; then
+          ok "kept your local-only key(s): $_kept"
+        fi
+        # Keep a backup only when it differs, so re-running does not litter the
+        # directory with identical copies.
+        if cmp -s "$_bk" "$SETTINGS_DST"; then
+          rm -f "$_bk"
+          ok "settings.json was already up to date"
+        else
+          ok "previous copy: $_bk"
+        fi
+      else
+        cp -p "$_bk" "$SETTINGS_DST"
+        rm -f "$_bk"
+        warn "could not merge settings.json: $_kept"
+        warn "your existing file was left exactly as it was."
+        warn "fix the JSON, or re-run with --reset to rebuild from the template."
+      fi
+      rm -f "$_tmpl" "$_mrg"
+    fi
+  fi
   ok "no key is stored — apiKeyHelper reads it from $KEY_FILE at runtime"
 fi
 
