@@ -222,12 +222,17 @@ claude-lcls() {
     echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
     return 127
   fi
-  local _path="$PATH"
-  case ":$_path:" in
-    *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*) ;;
-    *) _path="$_path:/sdf/group/lcls/ds/dm/apps/dev/bin" ;;
-  esac
-  PATH="$_path" CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" "$_bin" "$@"
+  local _rest=":$PATH:"
+  while :; do
+    case "$_rest" in
+      *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*)
+        _rest="${_rest%%:/sdf/group/lcls/ds/dm/apps/dev/bin:*}:${_rest#*:/sdf/group/lcls/ds/dm/apps/dev/bin:}" ;;
+      *) break ;;
+    esac
+  done
+  _rest="${_rest#:}"; _rest="${_rest%:}"
+  PATH="/sdf/group/lcls/ds/dm/apps/dev/bin${_rest:+:$_rest}" \
+    CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" "$_bin" "$@"
 }
 ```
 
@@ -239,30 +244,43 @@ frozen into the function, so a version bump or rollback on the deploy side
 reaches you with nothing to re-run. There is no fallback to `command claude` or
 to `~/.local/share/claude/versions/*` — see
 [The shared binary](#the-shared-binary) for why. And the shared tools directory
-is **appended** to `PATH` — see below.
+goes **first** on `PATH` — see below.
 
 ### Shared tools on `PATH` (this is where `uv` comes from)
 
-Several deployed skills — `confluence-search`, `ask-slac-ai-tools` — shell out to
-a bare `uv run` on a PEP 723 inline-metadata script. Nothing on S3DF puts `uv` on
-`PATH` by default, and no skill's `env.sh` adds it: they only add their own
-`bin/`. So whether those skills worked came down to whether you happened to have
-installed `uv` yourself.
+Many deployed skills — `confluence-search`, `jira-search`, `elog-search`,
+`ask-slac-ai-tools` and others — shell out to a bare `uv run` on a PEP 723
+inline-metadata script, and agents reach for `uv run` in their own work too.
+Nothing on S3DF puts `uv` on `PATH` by default.
 
-`claude-lcls` now appends `/sdf/group/lcls/ds/dm/apps/dev/bin` to `PATH` for its
-own sessions, which is where the team `uv` lives (0.9.8, world-executable).
+`claude-lcls` puts `/sdf/group/lcls/ds/dm/apps/dev/bin` **first** on `PATH` for
+its own sessions. That is where the team `uv` lives (0.9.8, world-executable),
+so every `uv` a session runs is that one, whether or not you installed your own.
 
-**Appended, not prepended.** If you already have your own `uv`, it still wins.
-This only fills a gap; it never overrides a choice you made. Verified both ways:
-from an environment with no `uv` at all, `claude-lcls` resolves
-`/sdf/group/lcls/ds/dm/apps/dev/bin/uv` and runs a PEP 723 script successfully;
-with a `uv` earlier on `PATH`, that one is used instead.
+**Prepended, not appended.** The first version appended, so a personal `uv`
+kept winning. That meant a skill ran on whatever `uv` a given user happened to
+have, which is the variation a shared deployment exists to remove — the same
+reason `claude-lcls` runs only the shared Claude binary. The skills' own
+`env.sh` files also prepend this directory, but only when an agent remembers to
+source one first, and recorded sessions show bare `uv run` calls that did not.
+
+Measured on Claude Code 2.1.267: with the directory appended, the Bash tool
+resolved `~/.local/bin/uv`; with it prepended, it resolved the shared `uv` —
+including when `~/.bashrc` prepends `~/.local/bin` unconditionally, because the
+Bash tool keeps the `PATH` that `claude-lcls` starts with.
 
 The `PATH` change is scoped to the `claude-lcls` command. Your interactive shell
-is not modified, and the guard means nesting `claude-lcls` does not repeat the
-entry.
+is not modified, so outside `claude-lcls` your own `uv` still wins. Any copy of
+the directory already on `PATH` is removed before it is prepended, so nesting
+`claude-lcls` keeps exactly one entry. The installer's verification step
+reports which `uv` a session will find.
 
-Skills that use `uv` set their own per-user `UV_CACHE_DIR` (`/tmp/uv-cache-$USER`)
+`UV_PYTHON_INSTALL_DIR` is deliberately **not** set by the launcher. Only the
+deployment owner can write the shared Python directory
+(`/sdf/group/lcls/ds/dm/apps/dev/python`), so pointing every `uv` at it would
+turn a request for a Python version it lacks into a hard `Permission denied`
+instead of a download into your home. Skills that need the shared Pythons set
+it themselves, together with a per-user `UV_CACHE_DIR` (`/tmp/uv-cache-$USER`),
 in their `env.sh`, so nothing writes to a shared cache.
 
 **3. Use them independently:**
