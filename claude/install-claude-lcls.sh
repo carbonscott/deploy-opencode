@@ -18,10 +18,11 @@
 # sessions and transcripts included. Nothing is shared between users except the
 # read-only binary and the read-only skills.
 #
-# claude-lcls also appends the shared team tools directory
-# (/sdf/group/lcls/ds/dm/apps/dev/bin, where `uv` lives) to PATH for its own
-# sessions only, so skills that shell out to `uv run` work without you
-# installing uv. Appended, so your own uv still takes precedence.
+# claude-lcls also puts the shared team tools directory
+# (/sdf/group/lcls/ds/dm/apps/dev/bin, where `uv` lives) FIRST on PATH for its
+# own sessions only, so every `uv` a session runs -- a skill's or an agent's
+# own -- is the team's uv, whether or not you installed one yourself. Your
+# login shell's PATH is untouched; outside claude-lcls your own uv still wins.
 #
 # Usage:
 #   ./install-claude-lcls.sh              # install (safe to re-run)
@@ -57,16 +58,30 @@ RESET="${RESET:-0}"
 # point is that the deployment decides which version everyone runs.
 SHARED_BIN="${SHARED_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
 
-# Shared team tools, APPENDED to PATH inside claude-lcls sessions. This is where
-# `uv` lives, and several deployed skills (confluence-search, ask-slac-ai-tools)
-# call a bare `uv run` on a PEP 723 script. Nothing on S3DF puts this directory
-# on PATH by default and no skill's env.sh adds it, so a ps-users member without
-# a PERSONAL uv install had no uv at all -- while someone who happened to have
-# one silently did. That difference is exactly the kind of thing a centralized
-# deployment exists to remove.
+# Shared team tools, PREPENDED to PATH inside claude-lcls sessions. This is where
+# `uv` lives, and many deployed skills (confluence-search, jira-search,
+# elog-search, ask-slac-ai-tools, ...) run a bare `uv run` on a PEP 723 script,
+# as do agents doing their own work. Nothing on S3DF puts this directory on PATH
+# by default, so a ps-users member without a PERSONAL uv install had no uv at
+# all -- while someone who happened to have one silently ran that instead.
 #
-# APPENDED, not prepended, on purpose: a user who already has their own uv keeps
-# it. This only fills a gap, it never overrides a choice someone made.
+# PREPENDED, not appended. This reverses the original call (commit 2fe258c),
+# which appended so a personal uv would keep winning. In practice that meant a
+# skill ran on whatever uv, uv config and Python a given user happened to have,
+# which is the variation a centralized deployment exists to remove -- the same
+# reason claude-lcls runs only the shared Claude binary. The skills' env.sh
+# files already prepend this directory, but only when an agent remembers to
+# source one; recorded claude-lcls sessions show bare `uv run` calls that did
+# not. Doing it here covers every call. Measured on 2.1.267: the Bash tool
+# keeps the PATH claude-lcls starts with, even when ~/.bashrc prepends
+# ~/.local/bin unconditionally.
+#
+# Deliberately NOT exported alongside it: UV_PYTHON_INSTALL_DIR. Only the
+# deployment owner can write $SHARED_PYTHON_DIR, so pointing every bare `uv` at
+# it would turn a request for a Python it lacks into a hard "Permission denied"
+# (without it, uv downloads one into your home), and would let the owner's sessions
+# install or uninstall the interpreters the skills depend on. The skills that
+# need the shared Pythons set it themselves, in their env.sh.
 SHARED_TOOLS_BIN="${SHARED_TOOLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/bin}"
 
 # The shared uv-managed Python installs, and which one to use for the
@@ -491,7 +506,13 @@ fi
 # uv, and the wrapper still works without it. So this warns and continues rather
 # than dying, unlike the binary and the key.
 if [ -x "$SHARED_TOOLS_BIN/uv" ]; then
-  ok "shared tools on PATH: $SHARED_TOOLS_BIN (uv $("$SHARED_TOOLS_BIN/uv" --version 2>/dev/null | awk '{print $2}'))"
+  ok "shared tools first on PATH: $SHARED_TOOLS_BIN (uv $("$SHARED_TOOLS_BIN/uv" --version 2>/dev/null | awk '{print $2}'))"
+  # Say so when this changes which uv someone gets, rather than letting a
+  # personal uv vanish from their sessions without a word.
+  _own_uv="$(command -v uv 2>/dev/null || true)"
+  if [ -n "$_own_uv" ] && [ "$_own_uv" != "$SHARED_TOOLS_BIN/uv" ]; then
+    ok "your own uv ($_own_uv) is shadowed inside $FUNC_NAME sessions only; your shell keeps it"
+  fi
 else
   warn "shared tools dir has no runnable uv: $SHARED_TOOLS_BIN"
   warn "skills that call 'uv run' will fail unless you have your own uv on PATH"
@@ -929,15 +950,20 @@ $FUNC_NAME() {
         echo "$FUNC_NAME: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    # Shared team tools (uv, docs-index) appended to PATH, so skills that call a
-    # bare \`uv run\` work whether or not you have your own uv. Appended, so your
-    # own uv still wins. Guarded, so nesting claude-lcls does not repeat it.
-    local _path="\$PATH"
-    case ":\$_path:" in
-        *":$SHARED_TOOLS_BIN:"*) ;;
-        *) _path="\$_path:$SHARED_TOOLS_BIN" ;;
-    esac
-    PATH="\$_path" CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
+    # Shared team tools (uv, docs-index) FIRST on PATH, so every \`uv\` this
+    # session runs -- a skill's or an agent's own -- is the team's uv, even if
+    # you have one yourself. Any copy already on PATH is removed first, so
+    # nesting claude-lcls keeps exactly one entry. Your shell's PATH is untouched.
+    local _rest=":\$PATH:"
+    while :; do
+        case "\$_rest" in
+            *":$SHARED_TOOLS_BIN:"*)
+                _rest="\${_rest%%:$SHARED_TOOLS_BIN:*}:\${_rest#*:$SHARED_TOOLS_BIN:}" ;;
+            *) break ;;
+        esac
+    done
+    _rest="\${_rest#:}"; _rest="\${_rest%:}"
+    PATH="$SHARED_TOOLS_BIN\${_rest:+:\$_rest}" CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
 }
 $MARK_END
 EOF
@@ -1020,6 +1046,18 @@ if [ "$DRY_RUN" = 1 ]; then
   echo
   echo "Dry run complete. Nothing was written."
   exit 0
+fi
+
+# Which uv a session will find, checked through the function text just
+# installed rather than a re-derivation of it: /bin/sh stands in for the Claude
+# binary and reports what `uv` resolves to under the PATH the function built.
+if [ -x "$SHARED_TOOLS_BIN/uv" ]; then
+  SESSION_UV="$(bash -c "$SNIPPET"$'\n'"CLAUDE_LCLS_BIN=/bin/sh $FUNC_NAME -c 'command -v uv'" 2>/dev/null || true)"
+  if [ "$SESSION_UV" = "$SHARED_TOOLS_BIN/uv" ]; then
+    ok "uv inside $FUNC_NAME sessions: $SESSION_UV"
+  else
+    warn "uv inside $FUNC_NAME sessions resolves to '${SESSION_UV:-nothing}', not $SHARED_TOOLS_BIN/uv"
+  fi
 fi
 
 # Run the same thing the shell function will run. This is the real test: it

@@ -661,11 +661,12 @@ Expected — exactly one `>>>` line and one `<<<` line, wrapping the function:
 ```
 2:# >>> claude-lcls >>>
 3:# Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
-9:claude-lcls() {
-10:    local _bin="${CLAUDE_LCLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
-12:        echo "claude-lcls: shared Claude Code binary is not runnable: $_bin" >&2
-16:    CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
-18:# <<< claude-lcls <<<
+10:claude-lcls() {
+13:        echo "claude-lcls: shared Claude Code binary is not runnable: $_bin" >&2
+14:        echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
+20:    # nesting claude-lcls keeps exactly one entry. Your shell's PATH is untouched.
+30:    PATH="/sdf/group/lcls/ds/dm/apps/dev/bin${_rest:+:$_rest}" CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
+32:# <<< claude-lcls <<<
 ```
 
 Line numbers depend on how long your existing rc file is; what matters is that
@@ -688,20 +689,33 @@ claude-lcls() {
         echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    local _path="$PATH"
-    case ":$_path:" in
-        *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*) ;;
-        *) _path="$_path:/sdf/group/lcls/ds/dm/apps/dev/bin" ;;
-    esac
-    PATH="$_path" CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
+    # Shared team tools (uv, docs-index) FIRST on PATH, so every `uv` this
+    # session runs -- a skill's or an agent's own -- is the team's uv, even if
+    # you have one yourself. Any copy already on PATH is removed first, so
+    # nesting claude-lcls keeps exactly one entry. Your shell's PATH is untouched.
+    local _rest=":$PATH:"
+    while :; do
+        case "$_rest" in
+            *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*)
+                _rest="${_rest%%:/sdf/group/lcls/ds/dm/apps/dev/bin:*}:${_rest#*:/sdf/group/lcls/ds/dm/apps/dev/bin:}" ;;
+            *) break ;;
+        esac
+    done
+    _rest="${_rest#:}"; _rest="${_rest%:}"
+    PATH="/sdf/group/lcls/ds/dm/apps/dev/bin${_rest:+:$_rest}" CLAUDE_CONFIG_DIR="/home/<you>/.claude-lcls" "$_bin" "$@"
 }
 # <<< claude-lcls <<<
 ```
 
-The `PATH` line appends the shared team tools directory, which is where `uv`
-lives. Several skills call a bare `uv run`, and nothing on S3DF puts `uv` on
-`PATH` by default. Appended rather than prepended, so your own `uv` still wins
-if you have one.
+The `PATH` lines put the shared team tools directory, which is where `uv`
+lives, first on `PATH`. Many skills call a bare `uv run`, and nothing on S3DF
+puts `uv` on `PATH` by default. Prepended rather than appended, so every `uv` a
+`claude-lcls` session runs is the team's, even if you have your own; outside
+`claude-lcls` your shell is unchanged and your own `uv` still wins.
+
+> **Changed 2026-09-28.** The directory used to be appended, so a personal `uv`
+> won inside sessions too. Re-run the installer to get the prepending block; its
+> verification step prints `uv inside claude-lcls sessions: …/dev/bin/uv`.
 
 > **Changed 2026-08-28.** This block used to resolve a binary through
 > `command -v claude` and then `$HOME/.local/share/claude/versions/*`. It no

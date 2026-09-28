@@ -10,9 +10,10 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 |------|-------|---------|
 | `etc/key.dat` | IT | IT-managed API key (group ps-data); **not** used by the current `opencode.json` |
 | `dev/env/key.dat`, `dev/env/slac-key.dat` | You | opencode API keys referenced by `opencode.json` (group ps-users, `0640`); other `dev/env/*.dat` secrets stay owner-only `0600` |
-| `dev/bin/uv` | You | Shared uv binary (for lcls-catalog, tree-sitter-db, etc.) |
+| `dev/bin/uv` | You | Shared uv binary (0.9.8; for skills, lcls-catalog, tree-sitter-db, etc.). `claude-lcls` puts `dev/bin/` FIRST on PATH, so it is the `uv` every claude-lcls session runs |
+| `dev/bin/uvx` | You | uvx from the same uv 0.9.8 release; it runs the `uv` beside it, so it always uses the shared uv |
 | `dev/bin/docs-index` | You | Shared docs-index script (FTS5 indexer for doc collections) |
-| `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11); venvs symlink here instead of per-user `~/.local/share/uv/python/` |
+| `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11, 3.9); venvs symlink here instead of per-user `~/.local/share/uv/python/`. Writable by you only (ACL `group::r-x`) |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
 | `dev/opencode/commands/*.md` | You | Slash commands (approval, clarify, taskify) |
