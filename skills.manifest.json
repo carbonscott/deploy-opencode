@@ -309,7 +309,7 @@
     {
       "name": "hutch-resources",
       "repo": "slac-lcls/hutch-resources",
-      "ref": "ea0f7b57ede2df8d25c1b981efa977e95d38b93a",
+      "ref": "d7d5b736c180da28994f993b1594fa698879fcb5",
       "cron": null,
       "central_data": null,
       "harness": {
