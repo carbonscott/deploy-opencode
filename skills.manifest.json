@@ -305,6 +305,21 @@
         "description_auto": "Autonomous SQL assistant for researchers analyzing LCLS experiment elog data in SQLite. Executes queries via sqlite3, answers database questions, and handles LCLS-specific concepts (run numbers, experiments, questionnaires, detectors, workflows, logbook entries). Use when users ask about LCLS experiments, run data, detector configurations, sample information, logbook entries, analysis workflows, or any question answerable from the elog database. Reads a shared database restricted to the ps-data and ps-agent groups; if it is not readable, say so plainly and suggest elog-search, which works for every ps-users member.",
         "description_menu": "Query the shared LCLS elog SQLite database with SQL. Restricted to ps-data and ps-agent members."
       }
+    },
+    {
+      "name": "hutch-resources",
+      "repo": "slac-lcls/hutch-resources",
+      "ref": "5a0f71a619f864acd83f6bc18b370e061b55f74d",
+      "cron": null,
+      "central_data": null,
+      "harness": {
+        "source": "claude/skills/hutch-resources",
+        "name": "hutch-resources",
+        "kind": "skill",
+        "slug": "hutch-resources",
+        "description_auto": "Where things live at the LCLS hutches MEC, MFX, RIX, TMO and XPP: DAQ and hutch-python logs, code and configs, data, control hosts and mounts, and which skills to use. Use for any question about a specific hutch, its DAQ, detectors, runs or experiments (e.g. mec101585427), or when working on a hutch control host.",
+        "description_menu": "Per-hutch map (MEC, MFX, RIX, TMO, XPP) of where DAQ logs, code, configs and data live, and how to reach them."
+      }
     }
   ]
 }
