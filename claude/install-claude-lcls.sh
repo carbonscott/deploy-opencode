@@ -576,10 +576,16 @@ step "Config dir: $LCLS_DIR"
 #                                   auto-memory directory.
 # MODEL WIRING. The four ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
 # opus / sonnet / haiku / fable aliases onto the Bedrock ids the SLAC gateway
-# serves, so /model opus selects Opus 5, /model sonnet selects Sonnet 5 and
+# serves, so /model opus selects Opus 5.5, /model sonnet selects Sonnet 5 and
 # /model fable selects Fable 5.1. The gateway offers more than those four --
-# Opus 4.8, 4.7, 4.6 and Sonnet 4.6 are all live on it -- but an alias can only
-# point at one id.
+# Opus 5, 4.8, 4.7, 4.6 and Sonnet 4.6 are all live on it -- but an alias can
+# only point at one id.
+#
+# OPUS 5.5 NEEDS 2.1.285+. 2.1.267 has zero occurrences of "opus-5-5": it still
+# answers, but logs [claude-code:unrecognized_model], caps output at 32000
+# instead of 128000 and prices the session at Opus 5 rates. 2.1.285 recognizes
+# it and reports 1000000 / 128000 with or without [1m]. The suffix stays anyway
+# so that a rollback to 2.1.267 keeps the 1M window. Measured 2026-10-07.
 #
 # ANTHROPIC_DEFAULT_FABLE_MODEL also makes /model best resolve to Fable 5.1,
 # since `best` means "Fable where available, otherwise Opus". Anthropic's docs
@@ -611,7 +617,8 @@ step "Config dir: $LCLS_DIR"
 # All five ids were answered by the gateway on 2026-09-19: opus-5[1m],
 # sonnet-5[1m], fable-5-1[1m], sonnet-4-6 and haiku-4-5 each returned a
 # completion, exit 0. `GET /v1/models` lists fable-5-1, opus-5 and sonnet-5 at
-# 1M input / 128k output.
+# 1M input / 128k output. opus-5-5 was added 2026-10-07; the listing shows it at
+# 200k / 64k, but that metadata is stale -- a 215k-token request succeeded.
 #
 # PROMPT CACHE TTL. promptCacheTtl "1h" keeps the main conversation's cached
 # prefix alive through an hour-long gap instead of five minutes, which is what
@@ -633,6 +640,12 @@ step "Config dir: $LCLS_DIR"
 # CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS above, can leave it at 5m while
 # everything still appears to work.
 #
+# OPUS 5.5 IS THE EXCEPTION: the gateway caches it for 5 minutes only. A raw
+# request with cache_control ttl "1h" lands in ephemeral_5m for opus-5-5 and in
+# ephemeral_1h for sonnet-5, with or without the extended-cache-ttl beta, so
+# this is gateway-side and no client setting fixes it. Accepted for now
+# (2026-10-07); re-check after any gateway change.
+#
 #   env.DISABLE_AUTOUPDATER "1"     no self-update. Belt and braces: the updater
 #                                   is ALREADY off without it, because
 #                                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC a
@@ -652,6 +665,10 @@ step "Config dir: $LCLS_DIR"
 # claim a few lines up was measured on 2.1.235 only. 2.1.267 additionally has
 # modelSettings, which 2.1.235 lacks entirely -- that is the mechanism if a
 # per-model default effort level is ever wanted here.
+#
+# The pin moved again, to 2.1.285, on 2026-10-07 for Opus 5.5. A string scan
+# finds every key written below in 2.1.285 too, and all five aliases (opus,
+# sonnet, fable, best, haiku) answered on the staged binary before publishing.
 #
 # Two things measured against the 2.1.235 binary that are easy to get wrong:
 #
@@ -681,7 +698,7 @@ read -r -d '' SETTINGS_JSON <<EOF || true
 
   "env": {
     "ANTHROPIC_BASE_URL": "$BASE_URL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",

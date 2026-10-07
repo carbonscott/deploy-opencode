@@ -96,6 +96,19 @@
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 5, "output": 25, "cache_write": 6.25, "cache_read": 0.50 }
         },
+        "us.anthropic.claude-opus-5-5": {
+          "name": "Claude Opus 5.5",
+          "limit": { "context": 1000000, "output": 128000 },
+          "reasoning": true,
+          "variants": {
+            "low":    { "effort": "low" },
+            "medium": { "effort": "medium" },
+            "high":   { "effort": "high" },
+            "max":    { "effort": "max" }
+          },
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "cost": { "input": 4, "output": 20, "cache_write": 5.00, "cache_read": 0.20 }
+        },
         "us.anthropic.claude-fable-5-1": {
           "name": "Claude Fable 5.1",
           "limit": { "context": 1000000, "output": 128000 },

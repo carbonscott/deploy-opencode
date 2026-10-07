@@ -150,7 +150,8 @@ so the next `claude-lcls` invocation picks up the flip.
 | Pin | Date | State | Why |
 |---|---|---|---|
 | 2.1.235 | 2026-08-28 | published, kept as rollback target | First publish. Measurements in this repo dated before 2026-09-19 were made against it. |
-| 2.1.267 | 2026-09-19 | **published and active** | `promptCacheTtl`, which needs 2.1.242+. |
+| 2.1.267 | 2026-09-19 | published; active until 2.1.285 is activated, then the rollback target | `promptCacheTtl`, which needs 2.1.242+. |
+| 2.1.285 | 2026-10-07 | **pinned in `env.sh`; publish + activate pending** | Opus 5.5 (`us.anthropic.claude-opus-5-5`), which 2.1.267 does not recognize. |
 
 ### A `verify` FAIL that is expected, not a defect
 
@@ -270,6 +271,89 @@ So the suffix is not a 2.1.235 artefact and the pins in
 `us.anthropic.claude-fable-5-1[1m]` at 1M; `haiku` sits at 200,000, which is its
 native size on the gateway rather than a missing suffix. Keep re-measuring this on
 future bumps — it is a gateway behaviour, not a documented contract.
+
+### 2.1.285 — the Opus 5.5 bump
+
+`env.sh` now pins `2.1.285`, the `stable` channel as of 2026-10-07 (`latest` was
+2.1.293). The reason is Opus 5.5, which the gateway started serving as
+`us.anthropic.claude-opus-5-5`.
+
+2.1.267 has **zero** occurrences of `opus-5-5`; 2.1.285 has 23. On 2.1.267 the
+model still answers, which makes the gap easy to miss. Measured with
+`ANTHROPIC_DEFAULT_OPUS_MODEL=us.anthropic.claude-opus-5-5[1m]`:
+
+| | 2.1.267 | 2.1.285 |
+|---|---|---|
+| stderr | `[claude-code:unrecognized_model]` | clean |
+| `contextWindow` with `[1m]` | 1,000,000 | 1,000,000 |
+| `contextWindow` without `[1m]` | not measured | 1,000,000 |
+| `maxOutputTokens` | 32,000 | 128,000 |
+| `costUSD` priced at | Opus 5 rates ($5 / $25) | Opus 5.5 rates ($4 / $20) |
+
+The template keeps `[1m]` on the Opus 5.5 pin even though 2.1.285 does not need
+it. A rollback to 2.1.267 would otherwise drop the window to 200,000.
+
+Thinking turned off still works on 2.1.285. That needed checking because Opus 5.5
+rejects `thinking: {type: "disabled"}` and forced `tool_choice` (`any` / `tool`)
+with a 400 at the gateway; both were confirmed with raw requests. With
+`MAX_THINKING_TOKENS=0` and a unique prompt per run, 2.1.285 returned the
+expected reply in 2.0 s. Use unique prompts for this kind of test: two identical
+2.1.267 runs came back in 0.2 s with byte-identical usage, which looks like a
+gateway response-cache hit and proves nothing about the request.
+
+**Bump verification, run on the staged binary** (`fetch 2.1.285`, before any
+write to the deployment). Every settings key the installer writes is still
+present:
+
+| Key | 2.1.267 | 2.1.285 |
+|---|---:|---:|
+| `promptCacheTtl` | 6 | 4 |
+| `subagentPromptCacheTtl` | 6 | 5 |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL` | 6 | 6 |
+| `modelSettings` | 7 | 7 |
+| `autoMemoryEnabled` | 6 | 8 |
+| `DISABLE_AUTOUPDATER` | 8 | 8 |
+| `showThinkingSummaries` | 5 | 7 |
+| `ANTHROPIC_DEFAULT_FABLE_MODEL` | 15 | 16 |
+| `ANTHROPIC_CUSTOM_MODEL_OPTION` | 12 | 13 |
+| `skipWebFetchPreflight` | 8 | 8 |
+| `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` | 5 | 13 |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | 18 | 19 |
+
+Every alias resolves and answers on 2.1.285, all with `promptCacheTtl: "1h"`:
+
+| Alias | Resolves to | Context | Max output | Cache bucket |
+|---|---|---:|---:|---|
+| opus | `us.anthropic.claude-opus-5-5[1m]` | 1,000,000 | 128,000 | **5m** |
+| sonnet | `us.anthropic.claude-sonnet-5[1m]` | 1,000,000 | 64,000 | 1h |
+| fable | `us.anthropic.claude-fable-5-1[1m]` | 1,000,000 | 64,000 | 1h |
+| best | `us.anthropic.claude-fable-5-1[1m]` | 1,000,000 | 64,000 | 1h |
+| haiku | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | 200,000 | 32,000 | 1h |
+
+`fetch 2.1.285` verified the download against Anthropic's manifest:
+`33dad1ec615a2e08cc78b494f05c110e49916de2c79d78ec8799ebf46b233d29`, 240,327,864
+bytes.
+
+### Opus 5.5 gets a five-minute cache only, and that is the gateway
+
+The one-hour cache does not take for Opus 5.5. This is gateway-side. A raw
+`POST /v1/messages` carrying `cache_control: {type: "ephemeral", ttl: "1h"}` on
+a ~13k-token system prompt lands in `ephemeral_5m_input_tokens` for
+`us.anthropic.claude-opus-5-5`. The same request lands in
+`ephemeral_1h_input_tokens` for `us.anthropic.claude-sonnet-5`. Adding the
+`extended-cache-ttl-2025-04-11` beta header changes nothing, and neither does
+`ENABLE_PROMPT_CACHING_1H=1` in Claude Code.
+
+Accepted for now (2026-10-07). The practical effect is that an Opus 5.5 session
+idle for more than five minutes re-writes its prefix on the next turn. Re-check
+after any gateway change with the `cache_creation` one-liner above.
+
+### The gateway's Opus 5.5 limits are stale metadata
+
+`GET /v1/models` lists `us.anthropic.claude-opus-5-5` at `max_input_tokens
+200000` and `max_output_tokens 64000`, against Anthropic's 1M / 128k. A single
+request of 215,229 input tokens succeeded (HTTP 200), so the 200k figure does not
+bind. Do not copy the listing's numbers into `opencode.json`'s `limit` block.
 
 ---
 
