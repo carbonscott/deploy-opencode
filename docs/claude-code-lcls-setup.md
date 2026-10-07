@@ -472,9 +472,13 @@ Messages API.
 
 **Claude 5 is available, including Fable 5.1.** The previously documented pins
 (Sonnet 4.6, Opus 4.8) still work but are a generation behind; the template uses
-Opus 5.5, Sonnet 5, and Fable 5.1. Opus 5.5 needs Claude Code 2.1.285+ to be
-recognized; 2.1.267 runs it but caps output at 32,000 tokens. Opus 5 stays
-reachable with `claude-lcls --model "us.anthropic.claude-opus-5[1m]"`.
+Opus 5, Sonnet 5, and Fable 5.1.
+
+**Opus 5.5 is opt-in.** The `opus` alias stays on Opus 5 until the gateway gives
+Opus 5.5 a one-hour prompt cache. To use it, run
+`claude-lcls --model "us.anthropic.claude-opus-5-5[1m]"` or pass the same id to
+`/model`. It needs Claude Code 2.1.285+; 2.1.267 runs it but caps output at
+32,000 tokens.
 
 Fable 5.1 reaches the picker through `ANTHROPIC_DEFAULT_FABLE_MODEL`, which also
 makes `--model best` resolve to it (`best` means "Fable where available,
@@ -524,7 +528,7 @@ documented contract.
 
 **Opus 5.5 on 2.1.285 is the first pin that does not need the suffix.** Plain
 `us.anthropic.claude-opus-5-5` reports 1,000,000, the same as the suffixed form.
-The template keeps `[1m]` anyway, so a rollback to 2.1.267 keeps the 1M window.
+Use the suffixed form anyway, so a rollback to 2.1.267 keeps the 1M window.
 
 `--model best` resolves to `us.anthropic.claude-fable-5-1[1m]` at 1,000,000.
 `haiku` reports 200,000, which is Haiku 4.5's native size on the gateway rather

@@ -151,7 +151,7 @@ so the next `claude-lcls` invocation picks up the flip.
 |---|---|---|---|
 | 2.1.235 | 2026-08-28 | published, kept as rollback target | First publish. Measurements in this repo dated before 2026-09-19 were made against it. |
 | 2.1.267 | 2026-09-19 | published; active until 2.1.285 is activated, then the rollback target | `promptCacheTtl`, which needs 2.1.242+. |
-| 2.1.285 | 2026-10-07 | **pinned in `env.sh`; publish + activate pending** | Opus 5.5 (`us.anthropic.claude-opus-5-5`), which 2.1.267 does not recognize. |
+| 2.1.285 | 2026-10-07 | **pinned in `env.sh`; publish + activate pending** | Opus 5.5 (`us.anthropic.claude-opus-5-5`, opt-in), which 2.1.267 does not recognize. |
 
 ### A `verify` FAIL that is expected, not a defect
 
@@ -276,11 +276,12 @@ future bumps — it is a gateway behaviour, not a documented contract.
 
 `env.sh` now pins `2.1.285`, the `stable` channel as of 2026-10-07 (`latest` was
 2.1.293). The reason is Opus 5.5, which the gateway started serving as
-`us.anthropic.claude-opus-5-5`.
+`us.anthropic.claude-opus-5-5`. It is opt-in: the `opus` alias stays on Opus 5
+until the gateway gives Opus 5.5 a one-hour cache (see below).
 
 2.1.267 has **zero** occurrences of `opus-5-5`; 2.1.285 has 23. On 2.1.267 the
-model still answers, which makes the gap easy to miss. Measured with
-`ANTHROPIC_DEFAULT_OPUS_MODEL=us.anthropic.claude-opus-5-5[1m]`:
+model still answers, which makes the gap easy to miss. Measured with the `opus`
+alias temporarily pointed at `us.anthropic.claude-opus-5-5[1m]`:
 
 | | 2.1.267 | 2.1.285 |
 |---|---|---|
@@ -290,8 +291,8 @@ model still answers, which makes the gap easy to miss. Measured with
 | `maxOutputTokens` | 32,000 | 128,000 |
 | `costUSD` priced at | Opus 5 rates ($5 / $25) | Opus 5.5 rates ($4 / $20) |
 
-The template keeps `[1m]` on the Opus 5.5 pin even though 2.1.285 does not need
-it. A rollback to 2.1.267 would otherwise drop the window to 200,000.
+Select Opus 5.5 with the `[1m]` form even though 2.1.285 does not need it. A
+rollback to 2.1.267 would otherwise drop the window to 200,000.
 
 Thinking turned off still works on 2.1.285. That needed checking because Opus 5.5
 rejects `thinking: {type: "disabled"}` and forced `tool_choice` (`any` / `tool`)
@@ -324,7 +325,7 @@ Every alias resolves and answers on 2.1.285, all with `promptCacheTtl: "1h"`:
 
 | Alias | Resolves to | Context | Max output | Cache bucket |
 |---|---|---:|---:|---|
-| opus | `us.anthropic.claude-opus-5-5[1m]` | 1,000,000 | 128,000 | **5m** |
+| opus (test pin) | `us.anthropic.claude-opus-5-5[1m]` | 1,000,000 | 128,000 | **5m** |
 | sonnet | `us.anthropic.claude-sonnet-5[1m]` | 1,000,000 | 64,000 | 1h |
 | fable | `us.anthropic.claude-fable-5-1[1m]` | 1,000,000 | 64,000 | 1h |
 | best | `us.anthropic.claude-fable-5-1[1m]` | 1,000,000 | 64,000 | 1h |
@@ -344,9 +345,12 @@ a ~13k-token system prompt lands in `ephemeral_5m_input_tokens` for
 `extended-cache-ttl-2025-04-11` beta header changes nothing, and neither does
 `ENABLE_PROMPT_CACHING_1H=1` in Claude Code.
 
-Accepted for now (2026-10-07). The practical effect is that an Opus 5.5 session
-idle for more than five minutes re-writes its prefix on the next turn. Re-check
-after any gateway change with the `cache_creation` one-liner above.
+The practical effect is that an Opus 5.5 session idle for more than five minutes
+re-writes its prefix on the next turn. **This is why the `opus` alias stays on
+Opus 5** (decision 2026-10-07). Re-check after any gateway change with the
+`cache_creation` one-liner above. Once Opus 5.5 lands in
+`ephemeral_1h_input_tokens`, moving the alias is a one-line change to
+`ANTHROPIC_DEFAULT_OPUS_MODEL`, plus a re-run of the installer by each user.
 
 ### The gateway's Opus 5.5 limits are stale metadata
 

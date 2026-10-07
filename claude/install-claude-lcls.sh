@@ -576,16 +576,19 @@ step "Config dir: $LCLS_DIR"
 #                                   auto-memory directory.
 # MODEL WIRING. The four ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
 # opus / sonnet / haiku / fable aliases onto the Bedrock ids the SLAC gateway
-# serves, so /model opus selects Opus 5.5, /model sonnet selects Sonnet 5 and
+# serves, so /model opus selects Opus 5, /model sonnet selects Sonnet 5 and
 # /model fable selects Fable 5.1. The gateway offers more than those four --
-# Opus 5, 4.8, 4.7, 4.6 and Sonnet 4.6 are all live on it -- but an alias can
+# Opus 5.5, 4.8, 4.7, 4.6 and Sonnet 4.6 are all live on it -- but an alias can
 # only point at one id.
 #
-# OPUS 5.5 NEEDS 2.1.285+. 2.1.267 has zero occurrences of "opus-5-5": it still
-# answers, but logs [claude-code:unrecognized_model], caps output at 32000
-# instead of 128000 and prices the session at Opus 5 rates. 2.1.285 recognizes
-# it and reports 1000000 / 128000 with or without [1m]. The suffix stays anyway
-# so that a rollback to 2.1.267 keeps the 1M window. Measured 2026-10-07.
+# OPUS 5.5 IS OPT-IN, NOT THE opus ALIAS, until the gateway gives it a one-hour
+# prompt cache (see PROMPT CACHE TTL below; it is five minutes today). Select it
+# with `claude-lcls --model "us.anthropic.claude-opus-5-5[1m]"`. It needs
+# 2.1.285+: 2.1.267 has zero occurrences of "opus-5-5", and while it still
+# answers, it logs [claude-code:unrecognized_model], caps output at 32000
+# instead of 128000 and prices the session at Opus 5 rates. 2.1.285 reports
+# 1000000 / 128000 with or without [1m]; keep the suffix so a rollback to
+# 2.1.267 keeps the 1M window. Measured 2026-10-07.
 #
 # ANTHROPIC_DEFAULT_FABLE_MODEL also makes /model best resolve to Fable 5.1,
 # since `best` means "Fable where available, otherwise Opus". Anthropic's docs
@@ -643,8 +646,9 @@ step "Config dir: $LCLS_DIR"
 # OPUS 5.5 IS THE EXCEPTION: the gateway caches it for 5 minutes only. A raw
 # request with cache_control ttl "1h" lands in ephemeral_5m for opus-5-5 and in
 # ephemeral_1h for sonnet-5, with or without the extended-cache-ttl beta, so
-# this is gateway-side and no client setting fixes it. Accepted for now
-# (2026-10-07); re-check after any gateway change.
+# this is gateway-side and no client setting fixes it. It is why the opus alias
+# stays on Opus 5 (2026-10-07). Once a ttl "1h" request for opus-5-5 lands in
+# ephemeral_1h, moving the alias is a one-line change to the env block below.
 #
 #   env.DISABLE_AUTOUPDATER "1"     no self-update. Belt and braces: the updater
 #                                   is ALREADY off without it, because
@@ -666,7 +670,8 @@ step "Config dir: $LCLS_DIR"
 # modelSettings, which 2.1.235 lacks entirely -- that is the mechanism if a
 # per-model default effort level is ever wanted here.
 #
-# The pin moved again, to 2.1.285, on 2026-10-07 for Opus 5.5. A string scan
+# The pin moved again, to 2.1.285, on 2026-10-07 so that opting into Opus 5.5
+# gets the full 128k output and correct pricing. A string scan
 # finds every key written below in 2.1.285 too, and all five aliases (opus,
 # sonnet, fable, best, haiku) answered on the staged binary before publishing.
 #
@@ -698,7 +703,7 @@ read -r -d '' SETTINGS_JSON <<EOF || true
 
   "env": {
     "ANTHROPIC_BASE_URL": "$BASE_URL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5-5[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",

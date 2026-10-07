@@ -13,8 +13,8 @@
   "// _10_": "suffixed id with 400 Invalid model name.",
   "// _11_": "promptCacheTtl needs Claude Code 2.1.242+; on 2.1.235 it is silently",
   "// _12_": "ignored. The shared binary pin lives in tools/claude-binary/env.sh.",
-  "// _13_": "Opus 5.5 needs 2.1.285+ to be recognized (2.1.267 caps it at 32k output).",
-  "// _14_": "The gateway caches it for 5 minutes only, even with promptCacheTtl 1h.",
+  "// _13_": "opus stays on Opus 5 until the gateway gives Opus 5.5 a 1h cache (it is 5m",
+  "// _14_": "today). Opt in with --model us.anthropic.claude-opus-5-5[1m]; needs 2.1.285+.",
 
   "apiKeyHelper": "cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat",
 
@@ -23,7 +23,7 @@
 
     "// ANTHROPIC_AUTH_TOKEN": "PASTE-YOUR-SLAC-API-KEY-HERE (only if you delete apiKeyHelper above)",
 
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5-5[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",
