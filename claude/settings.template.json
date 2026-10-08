@@ -4,7 +4,7 @@
   "// _1_": "SLAC AI Gateway config for Claude Code. See docs/claude-code-lcls-setup.md.",
   "// _2_": "Pick ONE auth method: apiKeyHelper (recommended, key stays in the key file)",
   "// _3_": "or env.ANTHROPIC_AUTH_TOKEN (paste). Delete the one you do not use.",
-  "// _4_": "Never commit a real key. Model ids verified against the gateway 2026-09-19.",
+  "// _4_": "Never commit a real key. Model ids verified against the gateway 2026-09-19; opus-5-5 on 2026-10-07.",
   "// _5_": "The [1m] suffix is what buys the 1M context window. Measured on 2.1.235: a",
   "// _6_": "plain us.anthropic.claude-sonnet-5 reports contextWindow 200000 and the",
   "// _7_": "suffixed form reports 1000000, both succeeding -- Claude Code strips the",
@@ -13,6 +13,8 @@
   "// _10_": "suffixed id with 400 Invalid model name.",
   "// _11_": "promptCacheTtl needs Claude Code 2.1.242+; on 2.1.235 it is silently",
   "// _12_": "ignored. The shared binary pin lives in tools/claude-binary/env.sh.",
+  "// _13_": "opus stays on Opus 5 until the gateway gives Opus 5.5 a 1h cache (it is 5m",
+  "// _14_": "today). Opt in with --model us.anthropic.claude-opus-5-5[1m]; needs 2.1.285+.",
 
   "apiKeyHelper": "cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat",
 
