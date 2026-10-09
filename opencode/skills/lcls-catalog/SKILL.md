@@ -1,6 +1,6 @@
 ---
 name: lcls-catalog
-description: "Assists with LCLS experiment data catalog operations: indexing files with snapshots, querying metadata with SQL, finding files by pattern/size, listing directory contents, and managing catalog snapshots. Use when the user asks about LCLS data, experiment files, catalog queries, or running lcls-catalog/lcat commands."
+description: "Assists with LCLS experiment data catalog operations: querying file metadata with SQL, folder sizes, finding files by pattern/size, listing directory contents, and catalog snapshots. Use when the user asks about LCLS data, experiment files, catalog queries, or running lcls-catalog/lcat commands."
 ---
 
 # lcls-catalog Skill
@@ -23,6 +23,17 @@ Always use `lcat` commands instead of Linux commands like `find` or `ls`. The ca
 
 Prefer `lcat query "<SQL>"` over other subcommands — SQL gives you the most flexibility for filtering, aggregation, and joins. Use `lcat find`, `lcat ls`, etc. only for simple lookups where a one-liner is clearer than SQL.
 
+For any question about folder or directory sizes ("largest folders", "how big is X/xtc", "which experiments use the most space"), query the `dirs` table, not `files`. It is precomputed and answers in under a second; aggregating `files` by folder can hit the limits below.
+
+## Limits: a stopped query is final
+
+`lcat` runs on shared interactive nodes, so every query is capped at 8 GB of memory, 8 threads and 90 seconds until the first rows. A query that hits a cap prints `lcat: query stopped: ...` and exits with code 3. When that happens:
+
+- Do not retry the same query, run it in the background, poll it, wrap it in `timeout`, or tell the user you will wait longer. It will stop the same way.
+- Do not raise the limits (`LCAT_MEMORY_LIMIT`, `LCAT_TIMEOUT`, ...) on an interactive node: that is what degrades the node for everyone.
+- Rewrite it smaller: use `dirs` for folder sizes; filter early with `WHERE experiment = '<exp>'` or `WHERE parent_path LIKE '/sdf/data/lcls/ds/<hutch>/<exp>/%'`; aggregate to fewer groups (`GROUP BY experiment`, not `GROUP BY path`); add `LIMIT` when listing rows.
+- If it cannot be made smaller, tell the user it is too big for an interactive query and that it can run as a Slurm batch job with higher `LCAT_*` limits.
+
 | Command | `lcat` usage |
 |---------|-------------|
 | stats | `lcat stats` |
@@ -31,20 +42,12 @@ Prefer `lcat query "<SQL>"` over other subcommands — SQL gives you the most fl
 | ls | `lcat ls <path> [--dirs]` |
 | tree | `lcat tree <path> [--depth N]` |
 | snapshots | `lcat snapshots [-e <exp>]` |
-| consolidate | `lcat consolidate [--archive <dir>]` |
-| snapshot | `lcat snapshot <path> -e <experiment> [--workers N]` |
 
-The `lcat` wrapper automatically supplies `$CATALOG_DATA_DIR` for read commands and `-o $CATALOG_DATA_DIR` for snapshot commands.
+The `lcat` wrapper automatically supplies `$CATALOG_DATA_DIR` for read commands.
+
+`snapshot`, `consolidate` and `refresh` write to the shared catalog. They are run by the nightly indexing job and its maintainer; do not run them unless the user explicitly asks to maintain the catalog.
 
 ## Command Reference
-
-### snapshot - Index files before purge
-
-```bash
-lcat snapshot <path> -e <experiment> [--workers N] [--checksum]
-```
-
-Key options: `--workers` (parallel, use 4-8 for large dirs), `--checksum` (SHA-256, slow).
 
 ### ls - List files or directories
 
@@ -104,16 +107,28 @@ Table name: `files`. Available columns:
 | `filename` | text | File name only |
 | `size` | integer | Size in bytes |
 | `mtime` | integer | Unix epoch seconds |
-| `owner` | text | File owner |
-| `group_name` | text | File group |
-| `permissions` | text | File permissions |
+| `owner` | text | Numeric uid as text, e.g. `'12345'` (find it with `id -u <user>`), not a username |
+| `group_name` | text | Numeric gid as text |
+| `permissions` | integer | `st_mode` bits |
 | `checksum` | text | SHA-256 (if computed) |
 | `experiment` | text | Experiment name |
-| `run` | text | Run identifier |
+| `run` | integer | Run number parsed from `run<N>` in the path, else NULL |
 | `on_disk` | boolean | Currently on disk? |
 | `indexed_at` | text | When indexed |
 
 **Date filtering**: `mtime` is epoch seconds. Convert with `date -d "2026-01-01" +%s`.
+
+Table `dirs` has one row per directory, counting files currently on disk:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `experiment` | text | Experiment name |
+| `path` | text | Directory path |
+| `depth` | integer | Number of path components |
+| `level` | integer | 0 = experiment root, 1 = `xtc/`, `hdf5/`, `scratch/`, ... |
+| `files`, `bytes` | integer | Recursive totals: everything under the directory |
+| `direct_files`, `direct_bytes` | integer | Files directly in the directory |
+| `newest_mtime` | integer | Newest file under it, epoch seconds |
 
 Common queries:
 ```sql
@@ -125,13 +140,12 @@ SELECT path, size/1e9 as gb FROM files ORDER BY size DESC LIMIT 20
 
 -- Files modified after a date
 SELECT path, size/1e9 as gb FROM files WHERE mtime >= 1767225600 ORDER BY mtime DESC LIMIT 20
-```
 
-### consolidate - Merge snapshots
+-- Ten largest xtc folders
+SELECT path, bytes/1e12 AS tb, files FROM dirs WHERE path LIKE '%/xtc' ORDER BY bytes DESC LIMIT 10
 
-```bash
-lcat consolidate              # Merge and delete old files
-lcat consolidate --archive /backup  # Merge and archive old files
+-- Largest top-level folders of one experiment
+SELECT path, bytes/1e12 AS tb FROM dirs WHERE experiment = 'mfx101591026' AND level = 1 ORDER BY bytes DESC
 ```
 
 ### snapshots - List snapshot files
@@ -143,12 +157,11 @@ lcat snapshots -e <experiment>  # Filter by experiment
 
 ## LCLS Data Structure
 
-LCLS data is organized as `/sdf/data/lcls/ds/<hutch>/<experiment>/`. Hutches include: amo, cxi, mec, mfx, xcs, xpp, and others.
+LCLS data is organized as `/sdf/data/lcls/ds/<hutch>/<experiment>/`. The catalog indexes the amo, cxi, mec, mfx, tmo, ued, rix, xcs, det, mob and prj trees nightly. xpp is not indexed yet, so for xpp use the filesystem directly.
 
 ## Key Reminders
 
 - Pattern syntax uses `%` (SQL LIKE), not `*` (shell glob)
 - Always use `-H` flag when showing file sizes to the user
-- For snapshot commands on large directories, suggest `--workers 4` or higher
-- Base files are complete snapshots; delta files are incremental changes
-- Run `consolidate` periodically to merge deltas into base files
+- Use `dirs` (with `level` / `path` filters) for directory sizes rather than `tree`, which re-scans the catalog once per directory
+- The index is rebuilt nightly, so files written today may be missing; if a query comes back suspiciously empty for something you know exists, check with `ls`
