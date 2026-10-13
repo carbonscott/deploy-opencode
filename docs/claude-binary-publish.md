@@ -150,8 +150,8 @@ so the next `claude-lcls` invocation picks up the flip.
 | Pin | Date | State | Why |
 |---|---|---|---|
 | 2.1.235 | 2026-08-28 | published, kept as rollback target | First publish. Measurements in this repo dated before 2026-09-19 were made against it. |
-| 2.1.267 | 2026-09-19 | published; active until 2.1.285 is activated, then the rollback target | `promptCacheTtl`, which needs 2.1.242+. |
-| 2.1.285 | 2026-10-07 | **pinned in `env.sh`; publish + activate pending** | Opus 5.5 (`us.anthropic.claude-opus-5-5`, opt-in), which 2.1.267 does not recognize. |
+| 2.1.267 | 2026-09-19 | published; active until 2026-10-07, now the rollback target | `promptCacheTtl`, which needs 2.1.242+. |
+| 2.1.285 | 2026-10-07 | **published + active** since 2026-10-07 | Opus 5.5 (`us.anthropic.claude-opus-5-5`), which 2.1.267 does not recognize. Opt-in at first; the `opus` alias and default since 2026-10-13. |
 
 ### A `verify` FAIL that is expected, not a defect
 
@@ -276,8 +276,9 @@ future bumps — it is a gateway behaviour, not a documented contract.
 
 `env.sh` now pins `2.1.285`, the `stable` channel as of 2026-10-07 (`latest` was
 2.1.293). The reason is Opus 5.5, which the gateway started serving as
-`us.anthropic.claude-opus-5-5`. It is opt-in: the `opus` alias stays on Opus 5
-until the gateway gives Opus 5.5 a one-hour cache (see below).
+`us.anthropic.claude-opus-5-5`. It was opt-in at first, with the `opus` alias left
+on Opus 5 until the gateway gave Opus 5.5 a one-hour cache. That happened by
+2026-10-13, and the alias moved then (see below).
 
 2.1.267 has **zero** occurrences of `opus-5-5`; 2.1.285 has 23. On 2.1.267 the
 model still answers, which makes the gap easy to miss. Measured with the `opus`
@@ -335,9 +336,10 @@ Every alias resolves and answers on 2.1.285, all with `promptCacheTtl: "1h"`:
 `33dad1ec615a2e08cc78b494f05c110e49916de2c79d78ec8799ebf46b233d29`, 240,327,864
 bytes.
 
-### Opus 5.5 gets a five-minute cache only, and that is the gateway
+### Opus 5.5 got a five-minute cache only at first, and that was the gateway
 
-The one-hour cache does not take for Opus 5.5. This is gateway-side. A raw
+From 2026-10-07 to at least 2026-10-08, the one-hour cache did not take for
+Opus 5.5. This was gateway-side. A raw
 `POST /v1/messages` carrying `cache_control: {type: "ephemeral", ttl: "1h"}` on
 a ~13k-token system prompt lands in `ephemeral_5m_input_tokens` for
 `us.anthropic.claude-opus-5-5`. The same request lands in
@@ -345,12 +347,33 @@ a ~13k-token system prompt lands in `ephemeral_5m_input_tokens` for
 `extended-cache-ttl-2025-04-11` beta header changes nothing, and neither does
 `ENABLE_PROMPT_CACHING_1H=1` in Claude Code.
 
-The practical effect is that an Opus 5.5 session idle for more than five minutes
-re-writes its prefix on the next turn. **This is why the `opus` alias stays on
-Opus 5** (decision 2026-10-07). Re-check after any gateway change with the
-`cache_creation` one-liner above. Once Opus 5.5 lands in
-`ephemeral_1h_input_tokens`, moving the alias is a one-line change to
-`ANTHROPIC_DEFAULT_OPUS_MODEL`, plus a re-run of the installer by each user.
+The practical effect was that an Opus 5.5 session idle for more than five
+minutes re-wrote its prefix on the next turn. That is why the `opus` alias stayed
+on Opus 5 (decision 2026-10-07).
+
+**Fixed on the gateway by 2026-10-13, and the alias moved.** The same raw
+request, byte for byte (~31k-token system prompt, `ttl: "1h"`), was sent on both
+days:
+
+| Date | Model | `ephemeral_1h_input_tokens` | `ephemeral_5m_input_tokens` |
+|---|---|---:|---:|
+| 2026-10-08 | `us.anthropic.claude-opus-5-5` | 0 | 30,603 |
+| 2026-10-08 | `us.anthropic.claude-sonnet-5` | 30,603 | 0 |
+| 2026-10-13 | `us.anthropic.claude-opus-5-5` | 30,603 | 0 |
+| 2026-10-13 | `us.anthropic.claude-sonnet-5` | 30,603 | 0 |
+
+Claude Code 2.1.285 agreed on 2026-10-13: `claude-lcls --model
+"us.anthropic.claude-opus-5-5[1m]"` with a unique `--append-system-prompt` nonce
+wrote 18,355 tokens to `ephemeral_1h` and none to `ephemeral_5m`. That held with
+`promptCacheTtl: "1h"` alone, so `ENABLE_PROMPT_CACHING_1H` is not needed.
+
+`ANTHROPIC_DEFAULT_OPUS_MODEL` now points at `us.anthropic.claude-opus-5-5[1m]`.
+Because the template writes no `model` key, that alias is also what plain
+`claude-lcls` runs. Each existing user gets the move only by re-running the
+installer. If Opus 5.5 ever falls back to a five-minute cache, moving the alias
+back is the same one-line change. Re-check with the `cache_creation` one-liner
+above, from a `claude-lcls` config. Plain `claude` on S3DF signs in to Anthropic
+directly rather than going through the gateway, so it proves nothing here.
 
 ### The gateway's Opus 5.5 limits are stale metadata
 

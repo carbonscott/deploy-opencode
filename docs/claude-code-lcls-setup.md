@@ -462,8 +462,9 @@ Anthropic models served as of **2026-09-19** (`GET /v1/models` → `200`):
 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | 200,000 | 64,000 | listed + `POST /v1/messages` → `200` |
 
 ¹ Anthropic's figures. The listing itself says 200,000 / 64,000 for Opus 5.5, but
-that metadata is stale: a 215k-token request succeeded. Opus 5.5 also gets a
-five-minute prompt cache only, even with `promptCacheTtl: "1h"`. Both are
+that metadata is stale: a 215k-token request succeeded. Until at least
+2026-10-08 the gateway also gave Opus 5.5 a five-minute prompt cache only; since
+2026-10-13 it gets the one-hour cache like every other model. Both are
 gateway-side; see `docs/claude-binary-publish.md` § 2.1.285.
 
 The gateway also serves OpenAI, Gemma, Nova, Llama, and Stability models — see
@@ -472,13 +473,22 @@ Messages API.
 
 **Claude 5 is available, including Fable 5.1.** The previously documented pins
 (Sonnet 4.6, Opus 4.8) still work but are a generation behind; the template uses
-Opus 5, Sonnet 5, and Fable 5.1.
+Opus 5.5, Sonnet 5, and Fable 5.1.
 
-**Opus 5.5 is opt-in.** The `opus` alias stays on Opus 5 until the gateway gives
-Opus 5.5 a one-hour prompt cache. To use it, run
-`claude-lcls --model "us.anthropic.claude-opus-5-5[1m]"` or pass the same id to
-`/model`. It needs Claude Code 2.1.285+; 2.1.267 runs it but caps output at
-32,000 tokens.
+**Opus 5.5 is the default model since 2026-10-13.** The `opus` alias points at
+`us.anthropic.claude-opus-5-5[1m]`, and with no `model` key in `settings.json`,
+plain `claude-lcls`, `--model opus` and `--model default` all resolve to that
+alias. It was opt-in from 2026-10-07 until the gateway gave it a one-hour prompt
+cache. It needs Claude Code 2.1.285+; 2.1.267 runs it but caps output at 32,000
+tokens. Existing users get the change only when they re-run
+`install-claude-lcls.sh`.
+
+Opus 5 stays reachable with `claude-lcls --model "us.anthropic.claude-opus-5[1m]"`
+or the same id passed to `/model`. To keep it as your own default, add
+`"model": "us.anthropic.claude-opus-5[1m]"` to `~/.claude-lcls/settings.json`.
+The installer does not define `model`, so a re-run keeps that key. Do not change
+`ANTHROPIC_DEFAULT_OPUS_MODEL` yourself instead: the template defines it, so the
+next re-run puts the template's value back.
 
 Fable 5.1 reaches the picker through `ANTHROPIC_DEFAULT_FABLE_MODEL`, which also
 makes `--model best` resolve to it (`best` means "Fable where available,
