@@ -123,6 +123,32 @@
           "cost": { "input": 10, "output": 50, "cache_write": 12.50, "cache_read": 0.25 }
         }
       }
+    },
+    "slac-openai": {
+      "npm": "@ai-sdk/openai",
+      "name": "SLAC AI Gateway (OpenAI)",
+      "options": {
+        "baseURL": "https://ai-api.slac.stanford.edu/v1",
+        "apiKey": "{file:/sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat}"
+      },
+      "models": {
+        "us.openai.gpt-6-sol": {
+          "name": "GPT-6 Sol",
+          "limit": { "context": 1050000, "output": 128000 },
+          "reasoning": true,
+          "options": { "include": ["reasoning.encrypted_content"] },
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "cost": { "input": 2, "output": 10, "cache_write": 2.50, "cache_read": 0.20 }
+        },
+        "openai.gpt-5.6-sol": {
+          "name": "GPT-5.6 Sol",
+          "limit": { "context": 1050000, "output": 128000 },
+          "reasoning": true,
+          "options": { "include": ["reasoning.encrypted_content"] },
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "cost": { "input": 5, "output": 30, "cache_write": 6.25, "cache_read": 0.50 }
+        }
+      }
     }
   },
   "model": "slac/us.anthropic.claude-sonnet-5",
