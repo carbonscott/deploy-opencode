@@ -1,4 +1,4 @@
-// opencode plugin: 1-hour prompt cache for Claude Opus 5.5 on the SLAC gateway.
+// opencode plugin: 1-hour prompt cache for Claude models on the SLAC gateway.
 //
 // opencode's ProviderTransform.applyCaching hard-codes cache_control
 // {type:"ephemeral"} with no ttl (1.2.10 through upstream 1.19.1), so every
@@ -8,7 +8,10 @@
 //
 //   - `config` hook (runs once at startup, before providers load) gives the
 //     `slac` provider a fetch that stamps ttl onto unstamped cache markers in
-//     POST /messages bodies for the listed models.
+//     POST /messages bodies for every Claude model except Haiku. Haiku is the
+//     small_model, so its one-off background requests (titles, summaries) run
+//     inside main sessions and would pay the 1h write price for nothing.
+//     A model the gateway gives no 1h cache simply falls back to 5 minutes.
 //   - `chat.headers` tags each slac request with its session kind, so only main
 //     sessions get the hour and subagents stay on 5 minutes -- the same split as
 //     Claude Code's promptCacheTtl. The fetch strips the tag before sending.
@@ -17,18 +20,24 @@
 //
 // Per-user env overrides:
 //   OPENCODE_CACHE_TTL=off       disable stamping (rollback for one user)
-//   OPENCODE_CACHE_TTL_MODELS    comma list of wire model ids, "*" = all slac models
+//   OPENCODE_CACHE_TTL_MODELS    comma list of wire model ids instead of the default
+//                                Claude-except-Haiku match; "*" = all slac models
 //   OPENCODE_CACHE_TTL_SCOPE=all stamp subagent sessions too
 //   OPENCODE_CACHE_TTL_LOG       JSONL path: markers stamped + response cache usage
 import { appendFileSync } from "node:fs"
 
 const PROVIDER = "slac"
 const TTL = process.env.OPENCODE_CACHE_TTL ?? "1h"
-const MODELS = (process.env.OPENCODE_CACHE_TTL_MODELS ?? "us.anthropic.claude-opus-5-5").split(",").filter(Boolean)
+const MODELS = (process.env.OPENCODE_CACHE_TTL_MODELS ?? "").split(",").filter(Boolean)
 const SCOPE = process.env.OPENCODE_CACHE_TTL_SCOPE ?? "main"
 const LOG = process.env.OPENCODE_CACHE_TTL_LOG
 const TAG = "x-opencode-cache-ttl-session"
 const WRAPPED = Symbol.for("opencode-cache-ttl.wrapped")
+
+function wantsModel(model) {
+  if (MODELS.length) return MODELS.includes("*") || MODELS.includes(model)
+  return typeof model === "string" && model.startsWith("us.anthropic.claude-") && !model.includes("haiku")
+}
 
 function takeTag(init) {
   const h = init?.headers
@@ -119,7 +128,7 @@ export const CacheTtlPlugin = async ({ client }) => {
           const wanted = TTL !== "off" && (SCOPE === "all" || taken.tag === "main")
           if (init?.method === "POST" && typeof init.body === "string" && url.endsWith("/messages")) {
             const body = JSON.parse(init.body)
-            if (MODELS.includes("*") || MODELS.includes(body.model)) {
+            if (wantsModel(body.model)) {
               const counts = wanted ? stamp(body, TTL) : { markers: -1, stamped: 0 }
               if (counts.stamped) init = { ...init, body: JSON.stringify(body) }
               entry = { ts: new Date().toISOString(), model: body.model, session: taken.tag, ttl: wanted ? TTL : "default", ...counts }
