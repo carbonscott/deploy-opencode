@@ -151,7 +151,7 @@
       }
     }
   },
-  "model": "slac/us.anthropic.claude-sonnet-5",
+  "model": "slac/us.anthropic.claude-opus-5-5",
   "small_model": "slac/us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "agent": {
     "build":   { "variant": "medium" },
