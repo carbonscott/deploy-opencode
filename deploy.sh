@@ -663,7 +663,11 @@ deploy_skill() {
     # which this script already clones into unconditionally. Rendering for real
     # is what lets the dry run below show the actual rsync it would perform.
     rm -rf "$stage/.rendered"
+    # --opencode-skill-dir: where the opencode copy lands (the rsync below), so
+    # render.sh can write that path over ${CLAUDE_SKILL_DIR}, which opencode
+    # does not fill in itself. Keyed by $name, not $slug, to match the rsync.
     DRY_RUN=0 "$RENDER" --meta "$meta" --target "$rtarget" \
+      --opencode-skill-dir "$SKILLS_DST/$name" \
       "$srcdir" "$stage/.rendered" | sed 's/^/  /'
     echo "  ✓ rendered from manifest harness block (kind=$kind, slug=$slug, target=$rtarget)"
     [ "$slug" = "$name" ] || \
