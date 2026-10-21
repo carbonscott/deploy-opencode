@@ -32,6 +32,11 @@
 #   ./render.sh --target opencode <source-dir> <output-dir>
 #   DRY_RUN=1 ./render.sh <source-dir> <output-dir>
 #   ./render.sh --check <source-dir> <tree-to-compare>
+#   ./render.sh --opencode-skill-dir <abs-dir> <source-dir> <output-dir>
+#
+# The literal ${CLAUDE_SKILL_DIR} in a SKILL.md body is left alone in the claude
+# render (Claude Code fills it in) and, given --opencode-skill-dir, replaced
+# with that directory in the opencode render (opencode does not fill it in).
 #
 # bash + jq only, matching deploy.sh. See docs/design-single-source-skills.md
 # and docs/design-manifest-harness.md.
@@ -42,9 +47,10 @@ DRY_RUN="${DRY_RUN:-0}"
 CHECK=0
 TARGETS="both"
 META=""
+OC_SKILL_DIR=""
 
 usage() {
-  sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
 
 Options:
@@ -62,6 +68,11 @@ Options:
                                    --target opencode --check <src> \
                                    /sdf/group/lcls/ds/dm/apps/dev compares
                                    against opencode/skills/<slug>/.
+  --opencode-skill-dir <abs-dir>   The absolute directory the opencode copy of
+                                   this skill is deployed to. Every literal
+                                   ${CLAUDE_SKILL_DIR} in the opencode SKILL.md
+                                   becomes this path. deploy.sh passes it; pass
+                                   the same value with --check.
   -h, --help                       This text.
 
 Environment:
@@ -80,6 +91,8 @@ while [ $# -gt 0 ]; do
     --target) TARGETS="${2:-}"; shift 2 ;;
     --target=*) TARGETS="${1#*=}"; shift ;;
     --check) CHECK=1; shift ;;
+    --opencode-skill-dir) OC_SKILL_DIR="${2:-}"; shift 2 ;;
+    --opencode-skill-dir=*) OC_SKILL_DIR="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     -*) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -100,6 +113,11 @@ case "$TARGETS" in
   claude|opencode) TARGET_LIST="$TARGETS" ;;
   both) TARGET_LIST="claude opencode" ;;
   *) echo "ERROR: --target must be claude, opencode or both (got '$TARGETS')" >&2; exit 1 ;;
+esac
+
+case "$OC_SKILL_DIR" in
+  ""|/*) OC_SKILL_DIR="${OC_SKILL_DIR%/}" ;;
+  *) echo "ERROR: --opencode-skill-dir must be an absolute path (got '$OC_SKILL_DIR')" >&2; exit 1 ;;
 esac
 
 [ -d "$SRC" ] || { echo "ERROR: source dir not found: $SRC" >&2; exit 1; }
@@ -257,6 +275,38 @@ strip_frontmatter() {
   cat "$f"
 }
 
+# ─── Skill-directory placeholder ──────────────────────────────────────────
+# Claude Code replaces the literal ${CLAUDE_SKILL_DIR} in a SKILL.md with the
+# skill's absolute directory when it loads the skill (measured on 2.1.285). A
+# skill can then hand out exact paths instead of guessing ~/.claude/skills,
+# which is wrong for claude-lcls (~/.claude-lcls/skills) and for opencode.
+# opencode does no such substitution (1.2.10 has no CLAUDE_SKILL_DIR at all),
+# so the opencode render writes the deployed path in, from --opencode-skill-dir.
+# The claude render is left alone on purpose: Claude Code fills in the path each
+# user actually has, whether a ~/.claude-lcls link, a personal install or a
+# project skill.
+SKILL_DIR_TOKEN='${CLAUDE_SKILL_DIR}'
+
+# skill_body <target> -> the SKILL.md body for that harness on stdout
+skill_body() {
+  local target="$1" esc
+  if [ "$KIND" != "skill" ] || [ "$target" != "opencode" ] \
+     || ! grep -qF "$SKILL_DIR_TOKEN" "$SRC/SKILL.md"; then
+    strip_frontmatter "$SRC/SKILL.md"
+    return 0
+  fi
+  if [ -z "$OC_SKILL_DIR" ]; then
+    echo "  WARN: $SRC/SKILL.md uses $SKILL_DIR_TOKEN, which opencode does not fill in." >&2
+    echo "        Pass --opencode-skill-dir <deployed dir>, or the opencode copy shows it" >&2
+    echo "        literally." >&2
+    strip_frontmatter "$SRC/SKILL.md"
+    return 0
+  fi
+  # Escape the replacement for sed: backslash, '&' and the '|' delimiter.
+  esc="$(printf '%s' "$OC_SKILL_DIR" | sed -e 's/[\\&|]/\\&/g')"
+  strip_frontmatter "$SRC/SKILL.md" | sed -e "s|[\$]{CLAUDE_SKILL_DIR}|$esc|g"
+}
+
 # ─── YAML scalar emission ─────────────────────────────────────────────────
 # Emit a plain scalar when it is unambiguous, otherwise a double-quoted one.
 # The quoting trigger set is deliberately conservative: ": ", " #", leading
@@ -322,7 +372,7 @@ check_target() {
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/check-$SLUG-XXXXXX")"
 
   if [ "$KIND" = "command" ]; then
-    { emit_frontmatter "$target"; strip_frontmatter "$SRC/SKILL.md"; } > "$tmp/rendered.md"
+    { emit_frontmatter "$target"; skill_body "$target"; } > "$tmp/rendered.md"
     if [ ! -f "$dest" ]; then
       echo "  ✗ MISSING $dest"
       CHECK_STATUS=1
@@ -337,7 +387,7 @@ check_target() {
     return 0
   fi
 
-  { emit_frontmatter "$target"; strip_frontmatter "$SRC/SKILL.md"; } > "$tmp/SKILL.md"
+  { emit_frontmatter "$target"; skill_body "$target"; } > "$tmp/SKILL.md"
   rsync -a "${ASSET_EXCLUDES[@]}" "$SRC/" "$tmp/"
   if [ ! -d "$dest" ]; then
     echo "  ✗ MISSING $dest/"
@@ -385,14 +435,14 @@ render_target() {
 
   if [ "$KIND" = "command" ]; then
     mkdir -p "$(dirname "$dest")"
-    { emit_frontmatter "$target"; strip_frontmatter "$SRC/SKILL.md"; } > "$dest"
+    { emit_frontmatter "$target"; skill_body "$target"; } > "$dest"
     echo "  ✓ $dest"
     return 0
   fi
 
   stage="$(mktemp -d "${TMPDIR:-/tmp}/render-$SLUG-XXXXXX")"
 
-  { emit_frontmatter "$target"; strip_frontmatter "$SRC/SKILL.md"; } > "$stage/SKILL.md"
+  { emit_frontmatter "$target"; skill_body "$target"; } > "$stage/SKILL.md"
   rsync -a "${ASSET_EXCLUDES[@]}" "$SRC/" "$stage/"
 
   mkdir -p "$dest"
