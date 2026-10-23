@@ -26,8 +26,8 @@ This is a *different path* from the opencode deployment this repo also maintains
 | Requirement | Detail |
 |---|---|
 | Network | The gateway resolves and answers **only from the SLAC network or VPN**. On S3DF (`sdfiana025`, `sdfcron001`, batch nodes) it just works. From a laptop off-VPN it will not. |
-| Key file | `/sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat` |
-| Key permissions | `-rw-r-----  cwang31  ps-users`, 26 bytes, mode `0640` |
+| Your key file | `~/.config/slac-ai/key.dat`, mode `0600`, one per user. `claude-lcls` reads only this file. The installer fills it; see [Your API key](#your-api-key-keyswitch). |
+| Shared key | `/sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat`, `-rw-r-----  cwang31  ps-users`, 26 bytes, mode `0640`. The installer registers it as your first key. |
 | Claude Code | **Nothing to install.** The binary is deployed for `ps-users` at `/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current` (2.1.235 as of 2026-08-28). `claude-lcls` runs that one and only that one. |
 
 ### Who can be onboarded
@@ -41,8 +41,9 @@ id -nG | tr ' ' '\n' | grep -x ps-users && echo "you can read slac-key.dat"
 ```
 
 If that prints nothing, ask for `ps-users` membership rather than asking for the
-key to be copied. Never copy the key out of `dev/env/` into a home directory,
-a repo, a ticket, or a chat message.
+key to be copied. The installer copies the shared key into your own key file
+and pass store, both readable by you alone; never copy it anywhere else — a
+repo, a ticket, or a chat message.
 
 > **Measured note, 2026-08-26:** `key.dat` (the Stanford-gateway key used by
 > opencode) is *also* `ps-users` / `0640` today — 25 bytes. Earlier internal
@@ -113,6 +114,124 @@ different window; the installer does not set one, so you get the default.
 
 ---
 
+## Your API key: keyswitch
+
+**Since 2026-10 every user has a key file of their own.** Before that,
+`apiKeyHelper` read the shared `slac-key.dat` in place: about 30 people on one
+key and one monthly budget, readable by all of `ps-users`, with no way to tell
+anyone's use apart. SLAC IT and Cyber asked for per-person keys, and plan to
+retire the shared one.
+
+```
+your pass store (encrypted)          keyswitch -s slac-ai          the file claude-lcls reads
+  slac-ai/shared    shared key  ──┐    use NAME, or                ~/.config/slac-ai/key.dat
+  slac-ai/personal  your key    ──┴─▶  add NAME --use   ─────────▶ (mode 600)
+```
+
+- `claude-lcls` reads **one file**, `~/.config/slac-ai/key.dat`. The installer
+  writes `"apiKeyHelper": "cat /sdf/home/<x>/<you>/.config/slac-ai/key.dat"`,
+  an absolute path, which also works in Cogito sessions, where `~/.config` is a
+  symlink.
+- [keyswitch](https://github.com/carbonscott/keyswitch) keeps your keys
+  encrypted in your own [pass](https://www.passwordstore.org/) store, under
+  `slac-ai/<name>`, and writes the one you choose to that file. It is deployed
+  at `/sdf/group/lcls/ds/dm/apps/dev/keyswitch/current/bin/keyswitch`, and the
+  installer adds a `keyswitch` shell function next to `claude-lcls`.
+
+### What the installer does
+
+1. **In a terminal, it asks:** *Paste your personal SLAC AI key, or press Enter
+   to use the shared LCLS key.* What you paste is not shown, and the gateway
+   checks it before the installer goes on; a rejected key is asked for again.
+   If you already use a key of your own, Enter keeps it.
+2. **It finds your pass store, or offers to make one.** If you have a GnuPG key,
+   it offers to use it (and asks which one, if you have several). If you have
+   none, it offers to create one for `<your name> <you@slac.stanford.edu>`;
+   GnuPG asks you for a passphrase. Then it runs `pass init`. You can say no.
+3. **With a store**, it stores the shared key as `slac-ai/shared` on every run,
+   so a rotated shared key is picked up, and a key you pasted as
+   `slac-ai/personal`, which it then puts in use. It puts the shared key in use
+   only when no key is in use yet, or the shared key already is. **Re-running
+   the installer never moves you back to the shared key.**
+4. **Without a store** (no terminal, or you said no), it writes `key.dat`
+   directly: the key you pasted; else the key already there, if the gateway
+   still accepts it; else the shared key. Re-run the installer in a terminal to
+   set up keyswitch later.
+
+Without a terminal (`< /dev/null`, a script, cron) the installer asks nothing.
+`--dry-run` says what it would do, asks nothing and writes nothing.
+
+### Add your own key later
+
+```bash
+keyswitch -s slac-ai add personal --use   # asks for the key (hidden), checks it, stores it, uses it
+```
+
+`keyswitch` is a shell function, so it exists in **new** shells. In the shell
+you ran the installer from, use the full path,
+`/sdf/group/lcls/ds/dm/apps/dev/keyswitch/current/bin/keyswitch`. `add` needs a
+pass store; without one, re-run the installer in a terminal and paste the key
+when it asks.
+
+### Switch, list, check
+
+```bash
+keyswitch -s slac-ai list           # your keys; * marks the one in use
+keyswitch -s slac-ai use shared     # switch (asks for your GnuPG passphrase)
+keyswitch -s slac-ai current        # the name of the key in use
+keyswitch -s slac-ai test           # does the gateway accept the key in use?
+keyswitch -s slac-ai doctor         # every setting, and any problem
+```
+
+After a switch, restart `claude-lcls` to use the new key at once. Sessions
+already open pick it up within 5 minutes: Claude Code runs `apiKeyHelper` again
+after 5 minutes or on a 401. Always pass `-s slac-ai`; once you set up a second
+service in keyswitch, it cannot guess.
+
+### When the shared key is rotated
+
+`key.dat` is a copy now, so a new shared key reaches you only when you re-run
+the installer. The re-run stores the new key as `slac-ai/shared`, and writes it
+to `key.dat` if the shared key is the one you use.
+
+### Where things are
+
+| What | Path | Written by |
+|---|---|---|
+| The key `claude-lcls` reads | `~/.config/slac-ai/key.dat` (600, folder 700) | keyswitch, or the installer when there is no store |
+| Your keys, encrypted | `~/.password-store/slac-ai/*.gpg` (`$PASSWORD_STORE_DIR` if set) | `pass`, through `keyswitch add` |
+| keyswitch settings | `~/.config/keyswitch/config` | the installer adds two lines; yours are kept |
+| The slac-ai service | `~/.config/keyswitch/slac-ai.conf` | the installer, every run (backed up when it changes) |
+| Which key is in use | `~/.local/state/keyswitch/` (a fingerprint, never the key) | keyswitch |
+
+The two lines in `~/.config/keyswitch/config`:
+
+- `trusted_dirs = /sdf/group/lcls:/sdf/group/lcls/ds/dm/apps/dev`. keyswitch
+  refuses to run a program that sees your keys (`pass`, the gateway check) when
+  any folder above it can be changed by a group or by everyone, unless that
+  folder is listed here. `/sdf/group/lcls` is group-writable (`ps-pcds`), and
+  `dev/` shows `775` through its ACL mask. The `claude-lcls` binary and skills
+  already live under these folders, so trusting them adds no new exposure. If
+  you already have a `trusted_dirs` line, the installer adds these two to it.
+- `pass = /sdf/group/lcls/ds/dm/apps/dev/pass/current/bin/pass`, only when you
+  have no `pass` of your own on `PATH` and no `pass` line yet. Delete it to use
+  your own.
+
+`--uninstall` removes the `keyswitch` function together with `claude-lcls`, but
+leaves `key.dat`, your pass store and `~/.config/keyswitch` in place, and says
+where they are.
+
+### Security notes
+
+- The installer reads the shared key into a variable and gives it to `curl` and
+  `keyswitch` only on stdin, never on a command line: on a shared login node,
+  `ps` shows every command line to everyone. It never prints a key.
+- `key.dat` is a plain file that anything running as you can read, as it must
+  be for `claude-lcls`. Your other keys stay encrypted.
+- Your pass store is only as strong as your GnuPG passphrase.
+
+---
+
 ## Quick setup
 
 ### 1. Create `~/.claude/settings.json`
@@ -123,6 +242,7 @@ Copy the template from this repo and lock it down:
 mkdir -p ~/.claude
 cp /sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/settings.template.json \
    ~/.claude/settings.json
+sed -i "s|/YOUR/HOME|$HOME|" ~/.claude/settings.json
 chmod og-rwx ~/.claude/settings.json
 ```
 
@@ -134,11 +254,18 @@ chmod og-rwx ~/.claude/settings.json
 
 ### 2. Choose an auth method
 
-The template ships with **`apiKeyHelper`** enabled, which reads the key from its
-file at runtime. Nothing is pasted, nothing is duplicated:
+The template ships with **`apiKeyHelper`** enabled, which reads your own key
+file at runtime (see [Your API key](#your-api-key-keyswitch)):
 
 ```json
-"apiKeyHelper": "cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat"
+"apiKeyHelper": "cat /sdf/home/<x>/<you>/.config/slac-ai/key.dat"
+```
+
+The installer writes that file for you. By hand, starting from the shared key:
+
+```bash
+mkdir -p -m 700 ~/.config/slac-ai
+(umask 077; head -n 1 /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat > ~/.config/slac-ai/key.dat)
 ```
 
 `apiKeyHelper` is a first-class Claude Code setting — the binary describes it as
@@ -150,7 +277,7 @@ gateway.
 to the `env` block:
 
 ```json
-"ANTHROPIC_AUTH_TOKEN": "<contents of slac-key.dat>"
+"ANTHROPIC_AUTH_TOKEN": "<your key>"
 ```
 
 ### 3. Verify
@@ -206,6 +333,7 @@ Two requirements:
 mkdir -p ~/.claude-lcls
 cp /sdf/data/lcls/ds/prj/prjdat21/results/cwang31/deploy-opencode/claude/settings.template.json \
    ~/.claude-lcls/settings.json
+sed -i "s|/YOUR/HOME|$HOME|" ~/.claude-lcls/settings.json
 chmod 700 ~/.claude-lcls
 chmod og-rwx ~/.claude-lcls/settings.json
 ```
@@ -419,21 +547,23 @@ The group ownership the shared target carries is settled in
   Code does not expand `{file:...}`, `$(...)`, or `$VAR` inside `env` values.
   (opencode's `opencode.json` *does* support `{file:...}` — that syntax is an
   opencode feature and does not carry over.)
-- **`apiKeyHelper` is the file-sourced equivalent** and is the recommended form
-  for a shared team deployment. It runs a command and uses its stdout as the
-  credential, so `cat .../slac-key.dat` gives you exactly "read the key from its
-  path at runtime".
-- You can also export `ANTHROPIC_AUTH_TOKEN="$(cat .../slac-key.dat)"` in your
+- **`apiKeyHelper` is the file-sourced equivalent** and is the recommended form.
+  It runs a command and uses its stdout as the credential, so
+  `cat ~/.config/slac-ai/key.dat` (as an absolute path) gives you exactly "read
+  the key from its path at runtime".
+- You can also export `ANTHROPIC_AUTH_TOKEN="$(cat ~/.config/slac-ai/key.dat)"` in your
   shell rc instead of putting it in `settings.json` — this keeps the secret out
   of any file, but leaks it into your process environment (`/proc/<pid>/environ`,
   `ps -E` on some systems) and into shell history if typed interactively.
 
-**Why this matters for a team deployment.** The naive guide asks every user to
-paste the shared key into their own home directory. That creates N copies of one
-secret across N home directories with N different permission histories, and a
-rotation then requires chasing all N. `apiKeyHelper` keeps exactly one copy — the
-one in `dev/env/`, already correctly owned and grouped — and rotation is a single
-file write. **Use `apiKeyHelper` unless you have a specific reason not to.**
+**Why a file and not a pasted token.** A key file can change under a running
+session: `keyswitch` rewrites it, and Claude Code runs `apiKeyHelper` again after
+5 minutes or on a 401, so a switch needs no edit to `settings.json`. Until
+2026-10, `apiKeyHelper` read the one shared key in `dev/env/` in place, so a
+rotation was a single file write. Now that every user has a key of their own,
+each user has their own file (mode 600), and a rotated shared key reaches a user
+when they re-run the installer. **Use `apiKeyHelper` unless you have a specific
+reason not to.**
 
 ---
 
@@ -442,8 +572,10 @@ file write. **Use `apiKeyHelper` unless you have a specific reason not to.**
 Do not guess these. The gateway exposes a listing endpoint; query it:
 
 ```bash
-K=$(cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat)
-curl -s -H "x-api-key: $K" https://ai-api.slac.stanford.edu/v1/models \
+# The key reaches curl on stdin (-H @-), never on its command line, where `ps`
+# would show it to everyone on the node.
+sed -n '1s/^/x-api-key: /p' ~/.config/slac-ai/key.dat \
+  | curl -q -s -H @- https://ai-api.slac.stanford.edu/v1/models \
   | python3 -c 'import json,sys; [print(m["id"]) for m in json.load(sys.stdin)["data"]]'
 ```
 
@@ -723,7 +855,7 @@ standard Claude Code attribution if not set."*).
 | | opencode (this repo's main deployment) | Claude Code (this guide) |
 |---|---|---|
 | Endpoint | `https://aiapi-prod.stanford.edu/v1` (Stanford, OpenAI-compatible) | `https://ai-api.slac.stanford.edu` (SLAC, Anthropic Messages) |
-| Key file | `dev/env/key.dat` | `dev/env/slac-key.dat` |
+| Key file | `dev/env/key.dat` | your own `~/.config/slac-ai/key.dat` (the shared `dev/env/slac-key.dat` unless you add your own key) |
 | Proxy | `proxy/` on `sdfcron001:4000` injects the key so users never read it | **Not needed.** Claude Code talks to the SLAC gateway directly. |
 | Config | `opencode.json`, supports `{file:...}` key expansion | `~/.claude/settings.json`, uses `apiKeyHelper` instead |
 | Base URL trailing `/v1` | **Include it** — `.../v1` | **Omit it** — Claude Code appends `/v1/messages` itself |
@@ -745,11 +877,12 @@ key at all.
 ### A. Gateway reachability (no Claude Code needed)
 
 ```bash
-K=$(cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat)
-curl -s -o /dev/null -w '%{http_code}\n' \
-  -H "x-api-key: $K" https://ai-api.slac.stanford.edu/v1/models
+sed -n '1s/^/x-api-key: /p' ~/.config/slac-ai/key.dat \
+  | curl -q -s -o /dev/null -w '%{http_code}\n' -H @- https://ai-api.slac.stanford.edu/v1/models
 # → 200
 ```
+
+`keyswitch -s slac-ai test` asks the same question of the key in use.
 
 `000` or a hang means you are off the SLAC network/VPN. `401`/`403` means the key
 is not readable or not valid.
@@ -757,16 +890,16 @@ is not readable or not valid.
 ### B. One real completion
 
 ```bash
-K=$(cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat)
-curl -s -X POST https://ai-api.slac.stanford.edu/v1/messages \
-  -H "x-api-key: $K" -H "anthropic-version: 2023-06-01" \
+sed -n '1s/^/x-api-key: /p' ~/.config/slac-ai/key.dat \
+  | curl -q -s -X POST https://ai-api.slac.stanford.edu/v1/messages \
+  -H @- -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \
   -d '{"model":"us.anthropic.claude-opus-5","max_tokens":1,
        "messages":[{"role":"user","content":"hi"}]}' | head -c 200
 ```
 
 A `200` body echoing `"model":"us.anthropic.claude-opus-5"` is success.
-`max_tokens:1` keeps the test essentially free — this is a shared, billed key.
+`max_tokens:1` keeps the test essentially free — every key is billed.
 
 ### C. Claude Code end-to-end, **without touching your real config**
 
@@ -799,6 +932,8 @@ resolve.
 | `Invalid model name ...[1m]` from curl | You put a Claude Code alias suffix in a raw API call. Drop `[1m]`. |
 | Hang / connection refused | Off the SLAC network or VPN. |
 | `cat: ...slac-key.dat: Permission denied` | Not in `ps-users`. |
+| `cat: .../.config/slac-ai/key.dat: No such file or directory` | Your key file is missing. Re-run `install-claude-lcls.sh`, or `keyswitch -s slac-ai use shared`. |
+| `keyswitch: ... refusing to ...` | Run `keyswitch -s slac-ai doctor`; it names the file or folder and the fix. A folder others can write needs to be fixed, or listed in `trusted_dirs` if you trust its writers. |
 | `claude-lcls: shared Claude Code binary is not runnable: ...` | You are probably no longer in `ps-users` — check `id -nG`. Test the binary directly: `/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current --version`. Do **not** fix this by installing Claude Code into your home directory; `claude-lcls` does not use a personal install, so it would change nothing. |
 | `claude: command not found` | That is your *personal* `claude`, which this setup does not provide and does not touch. `claude-lcls` is unaffected — it runs the shared binary by absolute path. |
 | Everyone suddenly on a different Claude Code version | Expected after a deploy-side `activate`. `bin/current` is resolved at call time by design. `readlink /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current` shows which version is live; `VERSIONS.json` beside it records when it changed and by whom. |
@@ -812,8 +947,11 @@ resolve.
 - **Never** commit a key, a key prefix, or a key length into this repo. The
   template carries a placeholder or an `apiKeyHelper` path — never a literal.
 - `chmod og-rwx ~/.claude/settings.json` if you chose the pasted form.
-- Do not copy `slac-key.dat` anywhere. Read it in place.
-- Do not echo it into logs. In shell snippets, load it into a variable and pass
-  it only via a header; never `echo "$K"`.
+- Keep keys in two places only: your pass store and `~/.config/slac-ai/key.dat`
+  (mode 600). The installer puts the shared key in both; do not copy it
+  anywhere else.
+- Do not echo a key into logs, and never put one on a command line: `ps` shows
+  every command line on a shared login node. Hand it to `curl` on stdin
+  (`-H @-`), as the snippets above do; never `echo "$K"` or `-H "x-api-key: $K"`.
 - If a key is exposed, say so immediately — rotation is cheap, a silent leak is
   not.
