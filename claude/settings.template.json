@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
 
   "// _1_": "SLAC AI Gateway config for Claude Code. See docs/claude-code-lcls-setup.md.",
-  "// _2_": "Pick ONE auth method: apiKeyHelper (recommended, key stays in the key file)",
-  "// _3_": "or env.ANTHROPIC_AUTH_TOKEN (paste). Delete the one you do not use.",
+  "// _2_": "Pick ONE auth method: apiKeyHelper (recommended: it reads your own key file,",
+  "// _3_": "which keyswitch manages) or env.ANTHROPIC_AUTH_TOKEN (paste). Delete the other.",
   "// _4_": "Never commit a real key. Model ids verified against the gateway 2026-09-19; opus-5-5 on 2026-10-07, its 1h cache on 2026-10-13.",
   "// _5_": "The [1m] suffix is what buys the 1M context window. Measured on 2.1.235: a",
   "// _6_": "plain us.anthropic.claude-sonnet-5 reports contextWindow 200000 and the",
@@ -15,8 +15,10 @@
   "// _12_": "ignored. The shared binary pin lives in tools/claude-binary/env.sh.",
   "// _13_": "opus is Opus 5.5 (and the default model) since 2026-10-13; needs 2.1.285+.",
   "// _14_": "Opus 5 stays reachable with --model us.anthropic.claude-opus-5[1m].",
+  "// _15_": "apiKeyHelper: install-claude-lcls.sh writes the ABSOLUTE path of YOUR key file,",
+  "// _16_": "$HOME/.config/slac-ai/key.dat (mode 600). Replace /YOUR/HOME by hand if you copy this.",
 
-  "apiKeyHelper": "cat /sdf/group/lcls/ds/dm/apps/dev/env/slac-key.dat",
+  "apiKeyHelper": "cat /YOUR/HOME/.config/slac-ai/key.dat",
 
   "env": {
     "ANTHROPIC_BASE_URL": "https://ai-api.slac.stanford.edu",
