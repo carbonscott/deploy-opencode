@@ -144,22 +144,41 @@ your pass store (encrypted)          keyswitch -s slac-ai          the file clau
    to use the shared LCLS key.* What you paste is not shown, and the gateway
    checks it before the installer goes on; a rejected key is asked for again.
    If you already use a key of your own, Enter keeps it.
-2. **It finds your pass store, or offers to make one.** If you have a GnuPG key,
-   it offers to use it (and asks which one, if you have several). If you have
-   none, it offers to create one for `<your name> <you@slac.stanford.edu>`;
-   GnuPG asks you for a passphrase. Then it runs `pass init`. You can say no.
+2. **It finds your pass store, or makes one** — with or without a terminal, so
+   the shared key is always registered. The store needs a GnuPG key:
+   - **You have one:** in a terminal it asks *Use your GnuPG key … for your pass
+     store?* (or which one, if you have several); without a terminal it takes
+     the first usable one and says which. Answering `n` makes a new key.
+   - **You have none, or said `n`:** it makes one for
+     `<your name> (keyswitch) <you@slac.stanford.edu>`. In a terminal it asks
+     *Protect it with a passphrase?* — yes, and GnuPG asks you for one; no, and
+     the key has none. Without a terminal the key has no passphrase, and the
+     installer says so.
+
+   Then it runs `pass init`. Storing a key needs only the public half of the
+   GnuPG key, so registering never asks for a passphrase, and an unattended run
+   never stops to ask.
 3. **With a store**, it stores the shared key as `slac-ai/shared` on every run,
    so a rotated shared key is picked up, and a key you pasted as
    `slac-ai/personal`, which it then puts in use. It puts the shared key in use
    only when no key is in use yet, or the shared key already is. **Re-running
    the installer never moves you back to the shared key.**
-4. **Without a store** (no terminal, or you said no), it writes `key.dat`
-   directly: the key you pasted; else the key already there, if the gateway
-   still accepts it; else the shared key. Re-run the installer in a terminal to
-   set up keyswitch later.
+4. **Without a store** — only when you opt out (below), `gpg` is missing, or a
+   step fails — it writes `key.dat` directly: the key you pasted; else the key
+   already there, if the gateway still accepts it; else the shared key.
 
 Without a terminal (`< /dev/null`, a script, cron) the installer asks nothing.
 `--dry-run` says what it would do, asks nothing and writes nothing.
+
+**Opting out.** `CLAUDE_LCLS_NO_KEYSWITCH=1 bash install-claude-lcls.sh` makes
+no pass store and no GnuPG key and writes no keyswitch settings; it writes
+`key.dat` directly, by the rules in step 4.
+
+**A key without a passphrase** — made without a terminal, or because you said
+no — can be used by anything that can read your files: the same exposure as
+`key.dat` itself, which holds the key in use in plain text. Add a passphrase
+whenever you like with `gpg --passwd <fingerprint>` (the installer prints the
+fingerprint); after that, `keyswitch use` asks for it.
 
 ### Add your own key later
 
@@ -170,8 +189,8 @@ keyswitch -s slac-ai add personal --use   # asks for the key (hidden), checks it
 `keyswitch` is a shell function, so it exists in **new** shells. In the shell
 you ran the installer from, use the full path,
 `/sdf/group/lcls/ds/dm/apps/dev/keyswitch/current/bin/keyswitch`. `add` needs a
-pass store; without one, re-run the installer in a terminal and paste the key
-when it asks.
+pass store; the installer makes one unless you opted out. If you did, re-run
+the installer in a terminal and paste the key when it asks.
 
 ### Switch, list, check
 
@@ -228,7 +247,9 @@ where they are.
   `ps` shows every command line to everyone. It never prints a key.
 - `key.dat` is a plain file that anything running as you can read, as it must
   be for `claude-lcls`. Your other keys stay encrypted.
-- Your pass store is only as strong as your GnuPG passphrase.
+- Your pass store is only as strong as your GnuPG passphrase. A key made
+  without one protects your other keys no better than `key.dat` protects the
+  key in use; `gpg --passwd <fingerprint>` adds one.
 
 ---
 

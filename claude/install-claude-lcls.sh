@@ -22,8 +22,14 @@
 #     keyswitch -s slac-ai use shared           # switch to another stored key
 #     keyswitch -s slac-ai list                 # * marks the key in use
 #
-# With no pass store (no terminal to ask in, or you said no), the installer
-# writes key.dat directly. Re-run it in a terminal to set up keyswitch.
+# With no pass store, the installer MAKES one, so the shared key is always
+# registered -- with or without a terminal. It uses your GnuPG key (asking
+# which in a terminal, taking the first usable one otherwise) or makes a new
+# one. A new key gets a passphrase only if you ask for one at the terminal;
+# without a terminal it has none, and the installer says so. Registering a
+# key never needs a passphrase, so an unattended run never stops to ask.
+# CLAUDE_LCLS_NO_KEYSWITCH=1 opts out: no store, no GnuPG key, no keyswitch
+# settings; key.dat is written directly.
 #
 # You do NOT need to install Claude Code first. The binary is deployed for
 # ps-users at /sdf/group/lcls/ds/dm/apps/dev/claude/bin/current, and that is the
@@ -46,6 +52,9 @@
 #   ./install-claude-lcls.sh --dry-run    # show what would happen, write nothing
 #   ./install-claude-lcls.sh --reset      # rebuild settings.json from the
 #                                         # template, discarding local-only keys
+#   CLAUDE_LCLS_NO_KEYSWITCH=1 ./install-claude-lcls.sh
+#                                         # no pass store or GnuPG key; write
+#                                         # ~/.config/slac-ai/key.dat directly
 #
 # Re-running is genuinely safe for settings.json: the shared template is MERGED
 # into your existing file, so keys the template does not define -- your theme,
@@ -128,6 +137,9 @@ SHARED_PASS="${SHARED_PASS:-/sdf/group/lcls/ds/dm/apps/dev/pass/current/bin/pass
 KS_SERVICE=slac-ai
 # Folders whose writers keyswitch is told to trust (see ks_global_content).
 KS_TRUSTED_DIRS="/sdf/group/lcls:/sdf/group/lcls/ds/dm/apps/dev"
+# The one opt-out from keyswitch: no pass store, no GnuPG key, no keyswitch
+# settings; key.dat is written directly. Normalised below like DRY_RUN.
+NO_KEYSWITCH="${CLAUDE_LCLS_NO_KEYSWITCH:-0}"
 
 # These names hold key material below. If the caller happened to export one,
 # bash would keep the export flag and hand the key to every child process.
@@ -383,6 +395,11 @@ case "$(printf '%s' "$DRY_RUN" | tr 'A-Z' 'a-z')" in
   1|true|yes|y|on)     DRY_RUN=1 ;;
   0|false|no|n|off|'') DRY_RUN=0 ;;
   *)                   die "DRY_RUN must be 0 or 1 (got: $DRY_RUN)" ;;
+esac
+case "$(printf '%s' "$NO_KEYSWITCH" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|y|on)     NO_KEYSWITCH=1 ;;
+  0|false|no|n|off|'') NO_KEYSWITCH=0 ;;
+  *)                   die "CLAUDE_LCLS_NO_KEYSWITCH must be 0 or 1 (got: $NO_KEYSWITCH)" ;;
 esac
 
 # Where keyswitch will look for its settings and where pass keeps its store,
@@ -644,13 +661,16 @@ step "API key: $USER_KEY_FILE"
 #   1. In a terminal only (never under --dry-run): ask for a personal key and
 #      check it with the gateway before going on.
 #   2. Write keyswitch's settings: `config` merged, slac-ai.conf rewritten.
-#   3. Find the pass store, or (terminal only) offer to create one.
+#   3. Find the pass store, or MAKE one -- with or without a terminal, so the
+#      shared key is always registered. Its GnuPG key: an existing usable one
+#      (asked in a terminal, the first one otherwise), else a new one; a new
+#      key gets a passphrase only when someone at a terminal asks for it.
 #   4. With a store: register the shared key as slac-ai/shared on EVERY run,
 #      so a rotated shared key is picked up, and a pasted key as
 #      slac-ai/personal. The pasted key is put in use; the shared key only
 #      when keyswitch reports no key in use, or reports 'shared' itself.
-#   5. Without one, or when keyswitch fails: write key.dat directly, by the
-#      same rules.
+#   5. Only with CLAUDE_LCLS_NO_KEYSWITCH=1, no gpg, or a failed step: write
+#      key.dat directly, by the same rules.
 # Re-running must never move someone back to the shared key: a key they chose
 # -- a keyswitch entry, or a key sitting in key.dat that the gateway still
 # accepts -- is kept.
@@ -807,12 +827,15 @@ write_ks_config() {
   ks_service_content | install_private_file "$KS_DIR/$KS_SERVICE.conf"
 }
 
-# Secret keys that can encrypt and are not revoked, expired or disabled, one
-# "FINGERPRINT<TAB>USER ID" line each.
+# Secret keys pass can encrypt to, one "FINGERPRINT<TAB>USER ID" line each:
+# able to encrypt, not revoked, expired or disabled, and fully or ultimately
+# valid. pass runs gpg with --batch, which refuses a recipient of any lesser
+# validity ("There is no assurance this key belongs to the named user")
+# rather than asking, so such a key would only fail later, in `keyswitch add`.
 gpg_secret_keys() {
   "$GPG_BIN" --batch --with-colons --list-secret-keys 2>/dev/null | awk -F: '
     function flush() { if (ok && fpr != "") printf "%s\t%s\n", fpr, uid; ok = 0; fpr = ""; uid = "" }
-    $1 == "sec" { flush(); ok = ($2 !~ /[redin]/ && $12 ~ /E/ && $12 !~ /D/); want = 1; next }
+    $1 == "sec" { flush(); ok = ($2 ~ /^[fu]$/ && $12 ~ /E/ && $12 !~ /D/); want = 1; next }
     $1 == "fpr" && want { fpr = $10; want = 0; next }
     $1 == "uid" && uid == "" { uid = $10; next }
     $1 == "ssb" { want = 0 }
@@ -826,59 +849,98 @@ ask_yes() {
   case "$a" in ''|[Yy]|[Yy][Ee][Ss]) return 0 ;; *) return 1 ;; esac
 }
 
-# Terminal only: offer to make the pass store, with an existing GnuPG key or a
-# new one. Returns 0 once $KS_STORE/.gpg-id exists, 1 when declined or failed.
+# Make a GnuPG key for the pass store and set NEW_FPR. In a terminal, ask
+# whether to protect it with a passphrase (pinentry then asks for it). Without
+# a terminal, or on "n", the key has NO passphrase: nobody is there to type
+# one, and a key nobody can unlock would make every later `keyswitch use`
+# fail. Its user id carries "(keyswitch)" either way, so it is recognisable.
+new_gpg_key() {
+  local me name uid before protect=0 why
+  NEW_FPR=""
+  me="$(id -un)"
+  name="$(getent passwd "$me" 2>/dev/null | cut -d: -f5 | cut -d, -f1 | tr -d '<>()')" || name=""
+  [ -n "$name" ] || name="$me"
+  uid="$name (keyswitch) <$me@slac.stanford.edu>"
+  echo "  making a GnuPG key for it: $uid"
+  if [ "$INTERACTIVE" = 1 ] \
+     && ask_yes "Protect it with a passphrase? (you'll type it when keyswitch switches keys)"; then
+    protect=1
+  fi
+  before="$(gpg_secret_keys | cut -f1)"
+  if [ "$protect" = 1 ]; then
+    # --yes answers GnuPG's own "Continue?"; pinentry asks for the passphrase.
+    "$GPG_BIN" --yes --quick-generate-key "$uid" default default never \
+      || { warn "GnuPG could not create the key"; return 1; }
+  else
+    "$GPG_BIN" --batch --pinentry-mode loopback --passphrase '' \
+        --quick-generate-key "$uid" default default never < /dev/null 2>&1 \
+      | sed 's/^/      /' \
+      || { warn "GnuPG could not create the key"; return 1; }
+  fi
+  NEW_FPR="$(gpg_secret_keys | cut -f1 | grep -vxF "$before" | head -n 1 || true)"
+  [ -n "$NEW_FPR" ] || { warn "cannot find the GnuPG key just made"; return 1; }
+  ok "made GnuPG key $NEW_FPR"
+  if [ "$protect" = 0 ]; then
+    if [ "$INTERACTIVE" = 1 ]; then why="you said no"; else why="nobody was there to ask"; fi
+    warn "this GnuPG key has no passphrase, because $why."
+    warn "anything that can read your files can use it -- the same exposure as"
+    warn "$USER_KEY_FILE itself. Add a passphrase any time with:"
+    warn "    gpg --passwd $NEW_FPR"
+  fi
+}
+
+# Make the pass store (rule 3 above): on every run but --dry-run, with or
+# without a terminal, unless CLAUDE_LCLS_NO_KEYSWITCH=1. Storing a key
+# encrypts to the PUBLIC half of the GnuPG key, so nothing here needs a
+# passphrase, and an unattended run with a passphrase-protected key cannot
+# stop at a prompt. Returns 0 once $KS_STORE/.gpg-id exists; 1 only when gpg
+# is missing or a step fails, and the caller then writes key.dat directly.
 setup_store() {
   local -a keys=()
-  local line n i choice fpr="" me name before
+  local line n i choice fpr=""
   if [ -z "$GPG_BIN" ]; then
     warn "no gpg on your PATH, so no pass store can be made"
     return 1
   fi
-  # pinentry asks for the GnuPG passphrase on this terminal.
-  GPG_TTY="$(tty)" && export GPG_TTY
-  echo "  keyswitch keeps your keys encrypted in a pass store, $KS_STORE,"
-  echo "  and you do not have one yet. pass encrypts with a GnuPG key."
+  # pinentry, if a passphrase is chosen below, asks on this terminal.
+  if [ "$INTERACTIVE" = 1 ]; then GPG_TTY="$(tty)" && export GPG_TTY; fi
+  echo "  keyswitch keeps your keys encrypted in a pass store; making one at"
+  echo "  $KS_STORE. pass encrypts with a GnuPG key."
   while IFS= read -r line; do keys+=("$line"); done < <(gpg_secret_keys)
   n=${#keys[@]}
-  if [ "$n" -eq 0 ]; then
-    me="$(id -un)"
-    name="$(getent passwd "$me" 2>/dev/null | cut -d: -f5 | cut -d, -f1 | tr -d '<>')" || name=""
-    [ -n "$name" ] || name="$me"
-    echo "  You have no GnuPG key. GnuPG can make one now; it asks for a passphrase,"
-    echo "  which you will type again whenever keyswitch switches keys."
-    ask_yes "Create a GnuPG key for \"$name <$me@slac.stanford.edu>\"?" || return 1
-    before="$(gpg_secret_keys | cut -f1)"
-    # --yes answers GnuPG's own "Continue?"; the passphrase still comes from pinentry.
-    "$GPG_BIN" --yes --quick-generate-key "$name <$me@slac.stanford.edu>" \
-        default default never \
-      || { warn "GnuPG could not create the key"; return 1; }
-    fpr="$(gpg_secret_keys | cut -f1 | grep -vxF "$before" | head -n 1 || true)"
-    [ -n "$fpr" ] || { warn "cannot find the GnuPG key just made"; return 1; }
-  elif [ "$n" -eq 1 ]; then
+  if [ "$n" -ge 1 ] && [ "$INTERACTIVE" = 0 ]; then
     fpr="${keys[0]%%$'\t'*}"
-    ask_yes "Make it with your GnuPG key ${keys[0]#*$'\t'} ($fpr)?" || return 1
-  else
+    ok "using your GnuPG key ${keys[0]#*$'\t'} ($fpr)"
+  elif [ "$n" -eq 1 ]; then
+    if ask_yes "Use your GnuPG key ${keys[0]#*$'\t'} (${keys[0]%%$'\t'*}) for your pass store?"; then
+      fpr="${keys[0]%%$'\t'*}"
+    fi
+  elif [ "$n" -gt 1 ]; then
     echo "  Your GnuPG keys:"
     for i in "${!keys[@]}"; do
       printf '    %d) %s  %s\n' $((i + 1)) "${keys[$i]#*$'\t'}" "${keys[$i]%%$'\t'*}"
     done
     while :; do
       choice=""
-      IFS= read -r -p "  Which one should encrypt your pass store? [1-$n, Enter = 1, n = none] " choice \
+      IFS= read -r -p "  Which one should encrypt your pass store? [1-$n, Enter = 1, n = make a new key] " choice \
         || choice=n
       case "$choice" in
         '') choice=1 ;;
-        [Nn]|[Nn][Oo]) return 1 ;;
+        [Nn]|[Nn][Oo]) choice=""; break ;;
       esac
       if [[ $choice =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$n" ]; then
         break
       fi
       echo "  Please answer a number from 1 to $n, or n."
     done
-    fpr="${keys[$((choice - 1))]%%$'\t'*}"
+    if [ -n "$choice" ]; then fpr="${keys[$((choice - 1))]%%$'\t'*}"; fi
   fi
-  PASSWORD_STORE_DIR="$KS_STORE" "$PASS_BIN" init "$fpr" 2>&1 | sed 's/^/      /' || true
+  if [ -z "$fpr" ]; then
+    new_gpg_key || return 1
+    fpr="$NEW_FPR"
+  fi
+  PASSWORD_STORE_DIR="$KS_STORE" "$PASS_BIN" init "$fpr" < /dev/null 2>&1 \
+    | sed 's/^/      /' || true
   if [ ! -f "$KS_STORE/.gpg-id" ]; then
     warn "pass init did not set up $KS_STORE"
     return 1
@@ -919,6 +981,9 @@ register_keys() {
       KEY_IN_USE="the key already in $USER_KEY_FILE"
     fi
     return 0
+  fi
+  if [ "$OWN_KEY_STATE" = rejected ]; then
+    warn "the gateway rejects the key in $USER_KEY_FILE; replacing it with the shared key"
   fi
   ks_add shared "$SHARED_KEY" --force --use || return 1
   KEY_IN_USE=shared
@@ -1002,7 +1067,9 @@ fi
 
 # 2. keyswitch's settings.
 KS_CONFIG_OK=0
-if [ "$DRY_RUN" = 1 ]; then
+if [ "$NO_KEYSWITCH" = 1 ]; then
+  ok "CLAUDE_LCLS_NO_KEYSWITCH=1: keyswitch is not set up; $USER_KEY_FILE is written directly"
+elif [ "$DRY_RUN" = 1 ]; then
   if [ -n "$OWN_PASS" ]; then _p="your own pass ($OWN_PASS) stays in charge"
   else _p="pass = $SHARED_PASS, unless a pass line is there"; fi
   echo "  (dry-run) would merge into $KS_DIR/config: trusted_dirs $KS_TRUSTED_DIRS; $_p"
@@ -1017,13 +1084,15 @@ fi
 # 3. The pass store.
 HAVE_STORE=0
 [ -f "$KS_STORE/.gpg-id" ] && HAVE_STORE=1
-if [ "$KS_OK" = 0 ]; then
+if [ "$NO_KEYSWITCH" = 1 ]; then
+  :
+elif [ "$KS_OK" = 0 ]; then
   warn "keyswitch is not installed at $KEYSWITCH_BIN"
 elif [ "$HAVE_STORE" = 1 ]; then
   ok "pass store: $KS_STORE"
 elif [ "$DRY_RUN" = 1 ]; then
-  echo "  (dry-run) no pass store at $KS_STORE; a real run in a terminal offers to make one"
-elif [ "$INTERACTIVE" = 1 ] && [ "$KS_CONFIG_OK" = 1 ]; then
+  echo "  (dry-run) no pass store at $KS_STORE; a real run makes one, with your GnuPG key or a new one"
+elif [ "$KS_CONFIG_OK" = 1 ]; then
   if setup_store; then HAVE_STORE=1; fi
 fi
 
@@ -1031,7 +1100,8 @@ fi
 KEY_IN_USE=""
 VIA_KS=0
 if [ "$DRY_RUN" = 1 ]; then
-  if [ "$KS_OK" = 1 ] && [ "$HAVE_STORE" = 1 ]; then
+  # Without a store a real run makes one first, so the outcome is the same.
+  if [ "$KS_OK" = 1 ] && [ "$NO_KEYSWITCH" = 0 ]; then
     if [ -n "$CURRENT_NAME" ] && [ "$CURRENT_NAME" != shared ]; then
       echo "  (dry-run) would store the shared key as $KS_SERVICE/shared and keep '$CURRENT_NAME' in use"
     elif [ -z "$CURRENT_NAME" ] && [ "$OWN_KEY_STATE" != none ] && [ "$OWN_KEY_STATE" != rejected ]; then
@@ -1052,13 +1122,9 @@ else
       warn "keyswitch could not store your keys (see above), so $USER_KEY_FILE is written directly."
       warn "re-run this installer to try again."
     fi
-  elif [ "$KS_OK" = 1 ]; then
-    warn "keyswitch could not be set up: there is no pass store at $KS_STORE."
-    if [ "$INTERACTIVE" = 1 ]; then
-      warn "re-run this installer to try again."
-    else
-      warn "re-run this installer in a terminal and it will offer to make one."
-    fi
+  elif [ "$KS_OK" = 1 ] && [ "$NO_KEYSWITCH" = 0 ]; then
+    warn "keyswitch could not be set up (see above), so $USER_KEY_FILE is written directly."
+    warn "re-run this installer to try again."
   fi
   if [ "$VIA_KS" = 0 ]; then
     if [ -n "$TYPED_KEY" ]; then
