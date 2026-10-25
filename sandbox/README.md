@@ -60,6 +60,7 @@ opencode-sandbox -- --some-opencode-flag
 |----------|---------|-------------|
 | `OPENCODE_SANDBOX_SIF` | `<script-dir>/opencode-sandbox.sif` | Path to the SIF image |
 | `OPENCODE_SANDBOX_EXTRA` | (none) | Colon-separated extra read-only paths |
+| `OPENCODE_SANDBOX_GH` | `1` | `0` stops the launcher copying your GitHub CLI login in (see Design notes) |
 | `APPTAINERENV_*` | (none) | Any host env var prefixed with `APPTAINERENV_` is auto-forwarded into the sandbox with the prefix stripped — see [BYOK](#byok-bring-your-own-key) below |
 | `OPENCODE_CONFIG_DIR` | `/sdf/group/lcls/ds/dm/apps/dev/opencode` | OpenCode config directory |
 
@@ -84,6 +85,7 @@ The same pattern works under older Apptainer/Singularity versions with the prefi
 - **Path preservation**: All host paths are identical inside the container. No path rewriting needed in skills, agents, or env.sh files.
 - **$HOME is hidden**: `--containall` hides the real home. A writable scratch home at `$SCRATCH/$USER-opencode-sandbox/home/` (falls back to `/tmp` if `$SCRATCH` is unset) stores runtime state. This means `git push` and SSH fail — this is intentional security behavior.
 - **Git commits work**: `~/.gitconfig` is copied to the scratch home so author info is correct. But pushes require SSH keys (hidden), so you push after exiting the sandbox.
+- **GitHub CLI login is copied in**: the `gh-skills` skill runs the shared `gh` (`dev/bin/gh`). If `~/.config/gh/hosts.yml` exists, the launcher copies it (and `config.yml`) into the scratch home at mode 600 and sets `GH_CONFIG_DIR`, the same way the Jira and Confluence tokens are copied. That gives the agent your GitHub access: a default `gh auth login` token can write to every repo your account reaches, and if your `.gitconfig` uses a bare `gh` as its credential helper, `git push` over HTTPS can work too. The launch banner says when this happens. Set `OPENCODE_SANDBOX_GH=0` to skip it, or log in with a fine-grained token if you want less access. Log in **outside** the sandbox (`/sdf/group/lcls/ds/dm/apps/dev/bin/gh auth login`); each launch removes the old copy and copies afresh, so a login made inside does not survive a restart.
 - **Slurm works**: Slurm binaries, config, and munge socket are mounted read-only. Network is not isolated, so daemon communication works.
 - **SQLite reads work**: Databases on read-only mounts open in read-only mode. Cron jobs (running outside the sandbox on sdfcron001) handle all writes.
 - **Cron jobs are unaffected**: They run on sdfcron001 outside any sandbox.
