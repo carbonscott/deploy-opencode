@@ -13,6 +13,8 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/bin/uv` | You | Shared uv binary (0.9.8; for skills, lcls-catalog, tree-sitter-db, etc.). `claude-lcls` puts `dev/bin/` FIRST on PATH, so it is the `uv` every claude-lcls session runs |
 | `dev/bin/uvx` | You | uvx from the same uv 0.9.8 release; it runs the `uv` beside it, so it always uses the shared uv |
 | `dev/bin/docs-index` | You | Shared docs-index script (FTS5 indexer for doc collections) |
+| `dev/bin/gh` | You | Symlink to `../gh/current/bin/gh`: the shared GitHub CLI, on `PATH` in claude-lcls agent shells and inside opencode-sandbox. Used by the gh-skills skill. Each user logs in once with this absolute path |
+| `dev/gh/<ver>/`, `dev/gh/current` | You | gh releases installed by `tools/gh/install-gh.sh` (sha256 + GitHub build attestation checked, `PROVENANCE` per version). Upgrade or roll back with `--activate <ver>` |
 | `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11, 3.9); venvs symlink here instead of per-user `~/.local/share/uv/python/`. Writable by you only (ACL `group::r-x`) |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
@@ -35,6 +37,8 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/confluence-search/` | You | confluence-search skill (live CQL search of SLAC Confluence; **per-user token**, no shared credential) |
 | `dev/opencode/skills/elog-search/` | You | elog-search skill (live read-only search of the LCLS eLog; **per-user S3DF token**, no shared credential) |
 | `dev/opencode/skills/jira-search/` | You | jira-search skill (live JQL search of SLAC Jira, read-only; **per-user token**, no shared credential) |
+| `dev/opencode/skills/gh-skills/` | You | gh-skills skill (GitHub CLI power-user guide; runs the shared `dev/bin/gh` with the user's own `gh` login). Also in `dev/claude/skills/` |
+| `dev/claude/skills/make-goal/` | You | make-goal skill (writes contracts for Claude Code's `/goal` loop). **Claude-only** (`harness.targets: ["claude"]`): opencode has no `/goal`, so there is no opencode copy |
 | `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
 | `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
 | `dev/data/olcf-docs/` | You | olcf-user-docs git repo with FTS5 search index (from olcf/olcf-user-docs) |
@@ -119,6 +123,9 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/confluence-search/` | `git@github.com:carbonscott/slac-confluence-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries Confluence live) |
 | `skills/elog-search/` | `git@github.com:carbonscott/slac-elog-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries the eLog live) |
 | `skills/jira-search/` | `git@github.com:carbonscott/slac-jira-search.git` via `skills.manifest.json` + `./deploy.sh` (no data dir — the skill queries Jira live) |
+| `skills/gh-skills/` (both trees) | `git@github.com:carbonscott/gh-skills.git` via `skills.manifest.json` + `./deploy.sh` (`harness.source: "."`, SKILL.md at the repo root) |
+| `claude/skills/make-goal/` (claude tree only) | `git@github.com:carbonscott/make-goal.git` via `skills.manifest.json` + `./deploy.sh` (`harness.source: "."`, `harness.targets: ["claude"]`) |
+| `bin/gh`, `gh/<ver>/` | GitHub release `cli/cli` v<ver>, via `tools/gh/install-gh.sh <ver>` |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 

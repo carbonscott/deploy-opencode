@@ -14,6 +14,14 @@
 # deploy.sh writes the entry's harness block to a temp JSON file and hands it
 # to `render.sh --meta`, and the rendered trees are what get deployed.
 #
+# harness.targets (optional) limits WHICH trees an entry is deployed to: a
+# list drawn from "claude" and "opencode", default both. ["claude"] ships a
+# skill to claude-lcls only — nothing under opencode/skills, no agents/ link —
+# for skills that depend on a Claude Code feature opencode lacks (make-goal
+# needs /goal). DEPLOY_CLAUDE=0 still removes the claude tree on top of that.
+# Dropping a target later does NOT delete the copy already deployed there;
+# deploy.sh warns and leaves it for a human to remove.
+#
 # A manifest entry with NO harness block is pre-migration and takes the
 # original path unchanged: opencode only, from the repo's checked-in
 # opencode/skills/<name>/, with nothing written to the claude tree. That is the
@@ -280,6 +288,11 @@ write_harness_meta() {
           "harness.description_auto is missing or empty"
         elif ($h.description_menu | type) != "string" or $h.description_menu == "" then
           "harness.description_menu is missing or empty"
+        elif ($h | has("targets")) and (($h.targets | type) != "array"
+              or ($h.targets | length) == 0
+              or ([$h.targets[] | select(. != "claude" and . != "opencode")] | length) > 0
+              or ($h.targets | unique | length) != ($h.targets | length)) then
+          "harness.targets must be a non-empty list of distinct \"claude\"/\"opencode\" (got \($h.targets | tojson))"
         else "" end' "$MANIFEST")"
 
   if [ -n "$reason" ]; then
@@ -300,7 +313,8 @@ write_harness_meta() {
             kind:             (.kind // "skill"),
             slug:             (.slug // .name // $n),
             description_auto: (.description_auto // ""),
-            description_menu: (.description_menu // "") }
+            description_menu: (.description_menu // ""),
+            targets:          (.targets // ["claude", "opencode"]) }
           + (if (.argument_hint // "") != "" then {argument_hint: .argument_hint} else {} end)
           + (if .user_invocable == true then {user_invocable: true} else {} end)
       ' "$MANIFEST" > "$meta"
@@ -629,6 +643,11 @@ deploy_skill() {
   local kind="skill"
   local srcdir=""
   local meta=""
+  # Which trees this entry may write. The legacy (no-harness) path is opencode
+  # only, so want_oc defaults to 1; the harness path overrides both from
+  # harness.targets below.
+  local want_oc=1
+  local want_claude=0
 
   if [ "$has_harness" = "1" ]; then
     meta="$META_DIR/$name.json"
@@ -656,9 +675,34 @@ deploy_skill() {
       return 0
     fi
     echo "  source dir: ${srcdir#$stage/} (from manifest harness.source)"
+    # harness.targets (normalised to a list by write_harness_meta) picks the
+    # trees; DEPLOY_CLAUDE=0 can only take the claude tree away, never add it.
+    want_oc=0
+    if jq -e '(.targets | index("opencode")) != null' "$meta" >/dev/null; then
+      want_oc=1
+    fi
+    if [ "$DEPLOY_CLAUDE" = "1" ] && \
+       jq -e '(.targets | index("claude")) != null' "$meta" >/dev/null; then
+      want_claude=1
+    fi
     # Both harness trees come out of ONE render invocation, so they cannot
     # disagree about the body — that is the whole point of the design.
-    if [ "$DEPLOY_CLAUDE" = "1" ]; then rtarget="both"; else rtarget="opencode"; fi
+    if [ "$want_oc" = "1" ] && [ "$want_claude" = "1" ]; then
+      rtarget="both"
+    elif [ "$want_oc" = "1" ]; then
+      rtarget="opencode"
+    elif [ "$want_claude" = "1" ]; then
+      rtarget="claude"
+    else
+      echo "  NOTE: nothing to deploy — harness.targets is $(jq -c '.targets' "$meta")"
+      echo "        and DEPLOY_CLAUDE=0 removes the claude tree"
+      return 0
+    fi
+    if [ "$want_oc" != "1" ] && { [ -e "$SKILLS_DST/$name" ] || [ -L "$AGENTS_DST/$name" ]; }; then
+      echo "  WARN: opencode is not in harness.targets, but $SKILLS_DST/$name or" >&2
+      echo "        $AGENTS_DST/$name already exists. deploy.sh does not remove it;" >&2
+      echo "        delete it by hand if the skill should leave opencode." >&2
+    fi
     # DRY_RUN=0 on purpose. DRY_RUN protects $DEPLOY_ROOT, not the staging dir,
     # which this script already clones into unconditionally. Rendering for real
     # is what lets the dry run below show the actual rsync it would perform.
@@ -678,12 +722,13 @@ deploy_skill() {
       # The opencode side still does not: $DEPLOY_ROOT/opencode/commands/ is
       # live hand-maintained state and adopting it is a separate decision (design
       # doc §6). So a kind=command entry deploys to the claude tree only.
-      [ "$DEPLOY_CLAUDE" = "1" ] && claude_cmd="$stage/.rendered/claude/commands/$slug.md"
+      [ "$want_claude" = "1" ] && claude_cmd="$stage/.rendered/claude/commands/$slug.md"
       echo "  NOTE: kind=command — claude/commands only; opencode/commands is not"
       echo "        a deploy destination (design doc §6)"
     else
-      src="$stage/.rendered/opencode/skills/$slug/"
-      [ "$DEPLOY_CLAUDE" = "1" ] && claude_src="$stage/.rendered/claude/skills/$slug/"
+      [ "$want_oc" = "1" ] && src="$stage/.rendered/opencode/skills/$slug/"
+      [ "$want_claude" = "1" ] && claude_src="$stage/.rendered/claude/skills/$slug/"
+      [ "$want_oc" = "1" ] || echo "  NOTE: harness.targets has no \"opencode\" — claude tree only"
     fi
   elif [ -d "$stage/opencode/skills/$name" ]; then
     echo "  DEPRECATED: no 'harness' block in the manifest entry for '$name'; using" >&2
@@ -741,6 +786,8 @@ deploy_skill() {
   local agent_link="$AGENTS_DST/$name"
   if [ "$kind" = "command" ]; then
     echo "  (skipped agents/ symlink: kind=command)"
+  elif [ "$want_oc" != "1" ]; then
+    echo "  (skipped agents/ symlink: opencode is not in harness.targets)"
   elif [ "$DRY_RUN" != "1" ]; then
     # AGENTS_DST is never created anywhere else, and on a virgin deploy root the
     # ln -s below fails with ENOENT, which under `set -euo pipefail` aborts the

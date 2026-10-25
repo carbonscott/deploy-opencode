@@ -5,8 +5,9 @@
 # absent it falls back to an in-repo <source-dir>/skill.json. Exactly one of
 # the two is read per run — they are never merged. Recognised fields: name,
 # kind, slug, description_auto, description_menu, argument_hint,
-# user_invocable. A 'source' key is accepted and IGNORED: it is meaningful to
-# deploy.sh, which resolves it into the <source-dir> argument passed here.
+# user_invocable. 'source' and 'targets' keys are accepted and IGNORED: they
+# are meaningful to deploy.sh, which resolves 'source' into the <source-dir>
+# argument passed here and turns 'targets' into --target.
 #
 # Reads <source-dir>/SKILL.md and writes the harness-specific layout under
 # <output-dir>:
@@ -50,7 +51,7 @@ META=""
 OC_SKILL_DIR=""
 
 usage() {
-  sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
 
 Options:

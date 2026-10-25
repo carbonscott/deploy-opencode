@@ -241,6 +241,11 @@ One optional object, `harness`, per element of `.skills[]`. Sibling of `name`,
 | `description_menu` | string | **yes** | — | `skill.json.description_menu`. opencode-side `description:`. Must be non-empty. |
 | `argument_hint` | string | no | absent | `skill.json.argument_hint`. Emitted as `argument-hint:` for `kind=command` only. |
 | `user_invocable` | boolean | no | `false` | `skill.json.user_invocable`. Emitted as `user-invocable: true` for `kind=command` only. Any value other than JSON `true` means absent. |
+| `targets` | array of strings | no | `["claude", "opencode"]` | **Added 2026-10-25.** Which trees `deploy.sh` writes: a non-empty list of distinct `"claude"` / `"opencode"`. `["claude"]` ships to claude-lcls only, with no `opencode/skills/<name>` and no `agents/` link; first used by `make-goal`, which needs Claude Code's `/goal`. `DEPLOY_CLAUDE=0` still removes the claude tree on top of it. A `kind=command` entry must include `"claude"`. Dropping a target later does not delete what is already deployed there; `deploy.sh` warns and a human removes it. `render.sh` ignores the key. |
+
+`source` may be `"."` for a repo whose `SKILL.md` sits at the root (`gh-skills`,
+`make-goal`). Everything else in the repo root then ships as an asset (README,
+LICENSE, `.gitignore`), except the fixed exclusions in `render.sh`.
 
 Deliberately **not** added, unchanged from `docs/design-single-source-skills.md` §4:
 `allowed-tools`, `model`, an explicit `assets` list. `cron` and `central_data` keep

@@ -15,6 +15,7 @@
 # Environment variables:
 #   OPENCODE_SANDBOX_SIF    Path to SIF (default: alongside this script)
 #   OPENCODE_SANDBOX_EXTRA  Colon-separated extra read-only bind paths
+#   OPENCODE_SANDBOX_GH=0   Do not copy your GitHub CLI (gh) login in
 
 set -euo pipefail
 
@@ -177,6 +178,33 @@ if [[ -f "$HOST_JIRA_TOKEN" ]]; then
     fi
 fi
 
+# --- Copy the GitHub CLI login into the sandbox home ---
+# gh-skills drives the shared gh (dev/bin/gh, on PATH below). gh keeps its login
+# in ~/.config/gh/hosts.yml under the real $HOME, which the sandbox hides, so copy
+# hosts.yml (and config.yml) in and point GH_CONFIG_DIR at the copy. This hands
+# the agent the GitHub access that login has: a default `gh auth login` token
+# can write to every repo the account reaches. The launch banner says so, and
+# OPENCODE_SANDBOX_GH=0 skips the copy. Any earlier copy is removed first, so an
+# opt-out or a host-side `gh auth logout` takes effect on the next launch. Log in
+# OUTSIDE the sandbox: a login made inside is overwritten on the next launch.
+HOST_GH_DIR="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-${HOME}/.config}/gh}"
+SANDBOX_GH_DIR="${SCRATCH_HOME}/.config/gh"
+GH_LOGIN_COPIED=false
+rm -f "${SANDBOX_GH_DIR}/hosts.yml" "${SANDBOX_GH_DIR}/config.yml"
+if [[ "${OPENCODE_SANDBOX_GH:-1}" != "0" && -f "${HOST_GH_DIR}/hosts.yml" ]]; then
+    mkdir -p "$SANDBOX_GH_DIR"
+    chmod 700 "$SANDBOX_GH_DIR"
+    if install -m 600 "${HOST_GH_DIR}/hosts.yml" "${SANDBOX_GH_DIR}/hosts.yml" 2>/dev/null; then
+        if [[ -f "${HOST_GH_DIR}/config.yml" ]]; then
+            install -m 600 "${HOST_GH_DIR}/config.yml" "${SANDBOX_GH_DIR}/config.yml" 2>/dev/null || true
+        fi
+        OPENCODE_ENV+=("GH_CONFIG_DIR=${SANDBOX_GH_DIR}")
+        GH_LOGIN_COPIED=true
+    else
+        echo "[sandbox] Warning: could not copy GitHub CLI login; gh will not be authenticated" >&2
+    fi
+fi
+
 # --- Build bind mount list ---
 BINDS=()
 
@@ -309,6 +337,9 @@ echo "[sandbox] Launching OpenCode in Apptainer sandbox ..." >&2
 echo "[sandbox] Working directory: $(pwd)" >&2
 echo "[sandbox] Home (sandboxed): ${SCRATCH_HOME}" >&2
 echo "[sandbox] Real \$HOME is hidden — git push, SSH disabled (by design)" >&2
+if $GH_LOGIN_COPIED; then
+    echo "[sandbox] GitHub CLI login copied in: gh can act on GitHub as you (OPENCODE_SANDBOX_GH=0 to skip)" >&2
+fi
 if $INCOGNITO; then
     "${APPTAINER_CMD[@]}"
 else
