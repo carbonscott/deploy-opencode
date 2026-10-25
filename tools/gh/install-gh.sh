@@ -20,9 +20,13 @@
 # Verification, before anything is written:
 #   1. sha256 of the tarball must match gh_<ver>_checksums.txt from the same
 #      release. Mismatch = abort.
-#   2. If a logged-in gh is on PATH, `gh attestation verify --repo cli/cli`
-#      checks GitHub's signed build provenance. Failure = abort. No usable gh =
-#      skipped, and PROVENANCE says so.
+#   2. `gh attestation verify --repo cli/cli` checks GitHub's signed build
+#      provenance, run by GH_ATTEST_BIN: default the shared $DEPLOY_ROOT/bin/gh
+#      (so the installed version vouches for the next one), else gh on PATH.
+#      Any failure = abort. A verifier too old for the current attestation
+#      format crashes (gh 2.62.0 panics on 2.103.2); for that bootstrap case,
+#      verify elsewhere and set GH_ATTEST=skip GH_ATTEST_NOTE="<how>", which is
+#      recorded in PROVENANCE. Never use the new binary to vouch for itself.
 #   3. The extracted binary must report `gh version <ver>`.
 #
 # Refuses to overwrite an existing <ver> directory. Old versions are kept for
@@ -42,7 +46,7 @@ GH_HOME="$DEPLOY_ROOT/gh"
 BIN_LINK="$DEPLOY_ROOT/bin/gh"
 LINK_TARGET="../gh/current/bin/gh"
 
-usage() { sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 ACTIVATE_ONLY=0
@@ -107,18 +111,24 @@ ACTUAL="$(sha256sum "$WORK/$TARBALL" | awk '{ print $1 }')"
 [ "$EXPECTED" = "$ACTUAL" ] || die "sha256 mismatch for $TARBALL: expected $EXPECTED, got $ACTUAL"
 echo "✓ sha256 $ACTUAL matches $SUMS"
 
-# 2. build provenance, when a logged-in gh is available
-ATTEST="skipped (no logged-in gh on PATH)"
-if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
-  if gh attestation verify "$WORK/$TARBALL" --repo cli/cli >"$WORK/attest.log" 2>&1; then
-    ATTEST="verified with $(gh --version | sed -n 1p) (gh attestation verify --repo cli/cli)"
-    echo "✓ attestation verified"
-  else
-    cat "$WORK/attest.log" >&2
-    die "gh attestation verify failed for $TARBALL"
-  fi
-else
+# 2. build provenance (fail-closed: verified, or skipped with a recorded reason)
+if [ "${GH_ATTEST:-verify}" = "skip" ]; then
+  [ -n "${GH_ATTEST_NOTE:-}" ] || die "GH_ATTEST=skip needs GH_ATTEST_NOTE saying how $TARBALL was verified instead"
+  ATTEST="not run here (GH_ATTEST=skip): $GH_ATTEST_NOTE"
   echo "! attestation $ATTEST"
+else
+  VERIFIER="${GH_ATTEST_BIN:-}"
+  if [ -z "$VERIFIER" ]; then
+    if [ -x "$BIN_LINK" ]; then VERIFIER="$BIN_LINK"; else VERIFIER="$(command -v gh || true)"; fi
+  fi
+  [ -n "$VERIFIER" ] || die "no gh to run the attestation check; set GH_ATTEST_BIN, or see GH_ATTEST=skip above"
+  if "$VERIFIER" attestation verify "$WORK/$TARBALL" --repo cli/cli >"$WORK/attest.log" 2>&1; then
+    ATTEST="verified with $VERIFIER ($("$VERIFIER" --version | sed -n 1p)): gh attestation verify --repo cli/cli"
+    echo "✓ attestation verified with $VERIFIER"
+  else
+    sed -n 1,20p "$WORK/attest.log" >&2
+    die "gh attestation verify failed for $TARBALL using $VERIFIER. If that gh is too old (it may crash), set GH_ATTEST_BIN to a newer one, or verify elsewhere and use GH_ATTEST=skip GH_ATTEST_NOTE=..."
+  fi
 fi
 
 # 3. extract + version check
