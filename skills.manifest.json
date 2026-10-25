@@ -320,6 +320,39 @@
         "description_auto": "Where things live at the LCLS hutches MEC, MFX, RIX, TMO and XPP: DAQ and hutch-python logs, code and configs, data, control hosts and mounts, and which skills to use. Use for any question about a specific hutch, its DAQ, detectors, runs or experiments (e.g. mec101585427), or when working on a hutch control host.",
         "description_menu": "Per-hutch map (MEC, MFX, RIX, TMO, XPP) of where DAQ logs, code, configs and data live, and how to reach them."
       }
+    },
+    {
+      "name": "gh-skills",
+      "repo": "carbonscott/gh-skills",
+      "ref": "4fe5c6a50306ba9d19c16411d074dda6b53bd45c",
+      "cron": null,
+      "central_data": null,
+      "harness": {
+        "source": ".",
+        "name": "gh-skills",
+        "kind": "skill",
+        "slug": "gh-skills",
+        "description_auto": "Power-user guide for the GitHub CLI (gh). Use when working with: gh api (GraphQL queries, REST pagination, field types, nested parameters), gh search (issue/PR/repo/code/commit qualifiers), CI/CD automation (workflow dispatch, run watching, release creation), JSON/jq/template output formatting across commands, scripting patterns (TTY detection, exit codes, batch operations with xargs), or advanced repository and PR management (merge strategies, auto-merge, fork sync, issue develop branches, Projects v2). Trigger on questions about gh CLI automation, scripting, advanced flags, or non-obvious features.",
+        "description_menu": "Power-user guide for the GitHub CLI (gh). Use when working with: gh api (GraphQL queries, REST pagination, field types, nested parameters), gh search (issue/PR/repo/code/commit qualifiers), CI/CD automation (workflow dispatch, run watching, release creation), JSON/jq/template output formatting across commands, scripting patterns (TTY detection, exit codes, batch operations with xargs), or advanced repository and PR management (merge strategies, auto-merge, fork sync, issue develop branches, Projects v2). Trigger on questions about gh CLI automation, scripting, advanced flags, or non-obvious features."
+      }
+    },
+    {
+      "name": "make-goal",
+      "repo": "carbonscott/make-goal",
+      "ref": "6a3e4b711bb16c0cc71b18ad92f8ef07e5c011ac",
+      "cron": null,
+      "central_data": null,
+      "harness": {
+        "source": ".",
+        "name": "make-goal",
+        "kind": "skill",
+        "slug": "make-goal",
+        "targets": [
+          "claude"
+        ],
+        "description_auto": "Interview the user and turn a rough goal into a condition-driven contract for Claude Code's native /goal loop — writes .goal/<slug>.json plus a bootstrapped ledger and claims file and prints the /goal command to run. Use when the user types /make-goal, says 'make a goal', 'write a goal contract', 'turn this into a /goal condition', or wants an orchestrated goal loop set up.",
+        "description_menu": "Interview the user and write a /goal contract (.goal/<slug>.json) for Claude Code's goal loop."
+      }
     }
   ]
 }

@@ -432,6 +432,23 @@ instead of a download into your home. Skills that need the shared Pythons set
 it themselves, together with a per-user `UV_CACHE_DIR` (`/tmp/uv-cache-$USER`),
 in their `env.sh`, so nothing writes to a shared cache.
 
+**GitHub CLI.** The same directory holds the team `gh` (`dev/bin/gh`, a link to
+`dev/gh/current/bin/gh`, installed by `tools/gh/install-gh.sh` with its sha256
+and GitHub build attestation checked; see `dev/gh/<ver>/PROVENANCE`). The
+`gh-skills` skill uses it. It needs your own GitHub login, made once in your own
+terminal. Use the absolute path, because your login shell does not have
+`dev/bin` on `PATH`:
+
+```bash
+/sdf/group/lcls/ds/dm/apps/dev/bin/gh auth login
+```
+
+S3DF has no system keyring, so `gh` stores the token in plain text in
+`~/.config/gh/hosts.yml` (mode 600). A default login can write to every repo
+your account reaches. If you want less, log in with a fine-grained token
+(`gh auth login --with-token`). A personal `gh` you already have keeps working
+and reads the same `hosts.yml`, but inside `claude-lcls` the team copy runs.
+
 **3. Use them independently:**
 
 ```bash
@@ -493,17 +510,24 @@ anything else keyed off the home directory.
 
 ### Shared skills
 
-The deploy target now **exists**. Seventeen team skills live read-only under
+The deploy target now **exists**. Twenty-two team skills, one per
+`skills.manifest.json` entry, live read-only under
 `/sdf/group/lcls/ds/dm/apps/dev/claude/skills/`:
 
 ```
-ask-ami                    ask-nersc          ask-tiled
-askcode                    ask-olcf           confluence-search
-ask-epics                  ask-s3df           cuda-docs
-ask-lcls2                  ask-slac-ai-tools  docs-search
-ask-slurm-s3df             ask-smalldata      elog-search
-experimental-hutch-python  xpm-seq
+ask-ami            ask-slac-ai-tools  docs-search                gh-skills
+askcode            ask-slurm-s3df     elog-copilot               hutch-resources
+ask-epics          ask-smalldata      elog-search                jira-search
+ask-lcls2          ask-tiled          experimental-hutch-python  make-goal
+ask-nersc          confluence-search  xpm-seq
+ask-olcf           cuda-docs
+ask-s3df
 ```
+
+`make-goal` is the one Claude-only skill (`harness.targets: ["claude"]`): it
+writes a contract for Claude Code's `/goal` loop, which opencode does not have.
+`gh-skills` needs a GitHub login once, in your own terminal:
+`/sdf/group/lcls/ds/dm/apps/dev/bin/gh auth login` (see the shared-tools section).
 
 **How discovery works.** Claude Code loads skills from
 `$CLAUDE_CONFIG_DIR/skills/`, and `CLAUDE_CONFIG_DIR` must be **writable** — it
@@ -532,7 +556,8 @@ done
 **There is no `commands` directory.** `dev/claude/` contains **only** `skills/`.
 Do **not** create a `~/.claude-lcls/commands` symlink — it would dangle.
 
-**Verify.** First, the links themselves — 17 of them:
+**Verify.** First, the links themselves — 22 of them (a new skill appears only
+after you re-run the installer):
 
 ```bash
 ls -l ~/.claude-lcls/skills/
