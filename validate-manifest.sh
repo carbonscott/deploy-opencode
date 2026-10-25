@@ -193,6 +193,20 @@ def nonempty_string($v): ($v | type) == "string" and (($v | trim) | length) > 0;
                 else empty end )
             else empty end ),
 
+          ( if ($h | has("targets")) then
+              ( if ($h.targets | type) != "array"
+                then ["FAIL", "harness.targets must be an array (got " + ($h.targets | tojson) + ")"]
+                elif ($h.targets | length) == 0
+                then ["FAIL", "harness.targets is empty; omit it to deploy to both trees"]
+                elif ([$h.targets[] | select(. != "claude" and . != "opencode")] | length) > 0
+                then ["FAIL", "harness.targets may only hold \"claude\" and \"opencode\" (got " + ($h.targets | tojson) + ")"]
+                elif ($h.targets | unique | length) != ($h.targets | length)
+                then ["FAIL", "harness.targets has duplicates (got " + ($h.targets | tojson) + ")"]
+                elif (($h.kind // "skill") == "command") and (($h.targets | index("claude")) == null)
+                then ["FAIL", "kind=command deploys to the claude tree only, so harness.targets must include \"claude\""]
+                else empty end )
+            else empty end ),
+
           ( if ($h | has("user_invocable")) then
               ( if ($h.user_invocable | type) != "boolean"
                 then ["FAIL", "harness.user_invocable must be a boolean"]
@@ -228,7 +242,10 @@ if ! OK_ROWS="$(jq -r '
     | select((.harness | type) == "object")
     | [ (.name | tostring), "OK",
         ("harness: kind=" + (.harness.kind // "skill")
-         + " source=" + (.harness.source // ("claude/skills/" + (.name | tostring)))) ]
+         + " source=" + (.harness.source // ("claude/skills/" + (.name | tostring)))
+         + (if (.harness.targets | type) == "array"
+            then " targets=" + (.harness.targets | map(tostring) | join(","))
+            else "" end)) ]
     | @tsv' "$MANIFEST")"; then
     echo "ERROR: failed to evaluate the manifest with jq" >&2
     exit 1
