@@ -353,6 +353,21 @@
         "description_auto": "Interview the user and turn a rough goal into a condition-driven contract for Claude Code's native /goal loop — writes .goal/<slug>.json plus a bootstrapped ledger and claims file and prints the /goal command to run. Use when the user types /make-goal, says 'make a goal', 'write a goal contract', 'turn this into a /goal condition', or wants an orchestrated goal loop set up.",
         "description_menu": "Interview the user and write a /goal contract (.goal/<slug>.json) for Claude Code's goal loop."
       }
+    },
+    {
+      "name": "hunk-review",
+      "repo": "modem-dev/hunk",
+      "ref": "9cca76fbf700217b574dfcdd4fe56c5b4388240b",
+      "cron": null,
+      "central_data": null,
+      "harness": {
+        "source": "packages/hunk/skills/hunk-review",
+        "name": "hunk-review",
+        "kind": "skill",
+        "slug": "hunk-review",
+        "description_auto": "Interacts with live Hunk diff review sessions via CLI. Inspects review focus, navigates files, hunks, and exact lines, reloads session contents, adds inline review comments, and paints attention marks on character ranges. Use when the user has a Hunk session running or wants to review diffs interactively.",
+        "description_menu": "Drive a live Hunk diff review: navigate, comment, highlight, reload."
+      }
     }
   ]
 }
