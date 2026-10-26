@@ -16,6 +16,7 @@
 #   OPENCODE_SANDBOX_SIF    Path to SIF (default: alongside this script)
 #   OPENCODE_SANDBOX_EXTRA  Colon-separated extra read-only bind paths
 #   OPENCODE_SANDBOX_GH=0   Do not copy your GitHub CLI (gh) login in
+#   OPENCODE_SANDBOX_HUNK=0 Do not let the agent reach the Hunk viewer you open
 
 set -euo pipefail
 
@@ -242,6 +243,38 @@ if [[ -f "${HOME}/.s3df-access-token" ]]; then
     fi
 fi
 
+# --- Hunk session keys (read-only bind) ---
+# hunk-review drives a Hunk viewer the user opens in their own terminal, outside
+# the sandbox, through a daemon on 127.0.0.1 (the network is shared, so it is
+# reachable from here). Every request is signed with per-user keys kept in
+# $XDG_RUNTIME_DIR/hunk-mcp, which --containall hides; without them the CLI in
+# here mints its own keys and the daemon refuses it. So bind that ONE directory
+# at its own path, never all of /run/user/<uid>, which also holds other agents'
+# sockets. Read-only on purpose: the unsandboxed viewer writes lock and metadata
+# files there, and a writable bind would let the agent plant symlinks for it to
+# follow (the sandbox's separate PID namespace would also make the host daemon
+# look dead and get its metadata deleted). Create it first, so a viewer opened
+# after launch is still reachable. The shared hunk wrapper derives the port from
+# the uid, which is the same in here; a HUNK_MCP_PORT set by hand is forwarded.
+# With this, the agent can read and annotate whatever you open in Hunk on this
+# node, and reload it within that repo. OPENCODE_SANDBOX_HUNK=0 skips it.
+HUNK_KEYS_BOUND=false
+HUNK_KEYS_EXIST=false
+if [[ "${OPENCODE_SANDBOX_HUNK:-1}" != "0" && -n "${XDG_RUNTIME_DIR:-}" \
+      && -d "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" ]]; then
+    HUNK_RUNTIME="${XDG_RUNTIME_DIR}/hunk-mcp"
+    [[ -e "$HUNK_RUNTIME" ]] || (umask 077 && mkdir "$HUNK_RUNTIME") 2>/dev/null || true
+    if [[ -d "$HUNK_RUNTIME" && ! -L "$HUNK_RUNTIME" && -O "$HUNK_RUNTIME" ]]; then
+        BINDS+=("--bind" "${HUNK_RUNTIME}:${HUNK_RUNTIME}:ro")
+        OPENCODE_ENV+=("XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}")
+        HUNK_KEYS_BOUND=true
+        if [[ -d "${HUNK_RUNTIME}/security-v1" ]]; then HUNK_KEYS_EXIST=true; fi
+    fi
+fi
+if [[ "${OPENCODE_SANDBOX_HUNK:-1}" != "0" && -n "${HUNK_MCP_PORT:-}" ]]; then
+    OPENCODE_ENV+=("HUNK_MCP_PORT=${HUNK_MCP_PORT}")
+fi
+
 # Slurm (read-only) — /run/slurm/conf is a symlink to /var/spool/slurmd/conf-cache
 for slurm_path in /opt/slurm /etc/slurm /run/slurm /var/spool/slurmd/conf-cache /run/munge /var/run/munge; do
     if [[ -e "$slurm_path" ]]; then
@@ -339,6 +372,9 @@ echo "[sandbox] Home (sandboxed): ${SCRATCH_HOME}" >&2
 echo "[sandbox] Real \$HOME is hidden — git push, SSH disabled (by design)" >&2
 if $GH_LOGIN_COPIED; then
     echo "[sandbox] GitHub CLI login copied in: gh can act on GitHub as you (OPENCODE_SANDBOX_GH=0 to skip)" >&2
+fi
+if $HUNK_KEYS_BOUND && $HUNK_KEYS_EXIST; then
+    echo "[sandbox] Hunk keys visible (read-only): the agent can read and annotate what you open in Hunk (OPENCODE_SANDBOX_HUNK=0 to skip)" >&2
 fi
 if $INCOGNITO; then
     "${APPTAINER_CMD[@]}"
