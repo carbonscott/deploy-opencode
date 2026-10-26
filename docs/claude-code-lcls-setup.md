@@ -449,6 +449,31 @@ your account reaches. If you want less, log in with a fine-grained token
 (`gh auth login --with-token`). A personal `gh` you already have keeps working
 and reads the same `hosts.yml`, but inside `claude-lcls` the team copy runs.
 
+**Hunk.** The same directory holds the team `hunk`
+([modem-dev/hunk](https://github.com/modem-dev/hunk), a terminal diff viewer):
+`dev/bin/hunk` is a small wrapper that runs `dev/hunk/current/bin/hunk`,
+installed by `tools/hunk/install-hunk.sh` with its sha256 and GitHub build
+attestation checked (see `dev/hunk/<ver>/PROVENANCE`). The `hunk-review` skill
+lets the agent steer a viewer that **you** open in your own terminal, on the
+same node as the agent (a tmux pane beside it works; the system tmux 2.7 is
+fine):
+
+```bash
+cd <your repo>
+/sdf/group/lcls/ds/dm/apps/dev/bin/hunk diff
+```
+
+Then ask the agent to walk you through the change: it moves your view, leaves
+notes and highlights code through `hunk session` commands. The viewer and the
+agent meet on a local port that the wrapper derives from your uid
+(`21000 + uid % 10000`), so users on the same login node do not collide. A
+personal `hunk` you already have reaches the agent only if it uses that port.
+Add this to your shell startup file:
+
+```bash
+export HUNK_MCP_PORT=$((21000 + $(id -u) % 10000))
+```
+
 **3. Use them independently:**
 
 ```bash
@@ -510,24 +535,29 @@ anything else keyed off the home directory.
 
 ### Shared skills
 
-The deploy target now **exists**. Twenty-two team skills, one per
+The deploy target now **exists**. Twenty-three team skills, one per
 `skills.manifest.json` entry, live read-only under
 `/sdf/group/lcls/ds/dm/apps/dev/claude/skills/`:
 
 ```
-ask-ami            ask-slac-ai-tools  docs-search                gh-skills
-askcode            ask-slurm-s3df     elog-copilot               hutch-resources
-ask-epics          ask-smalldata      elog-search                jira-search
-ask-lcls2          ask-tiled          experimental-hutch-python  make-goal
-ask-nersc          confluence-search  xpm-seq
-ask-olcf           cuda-docs
-ask-s3df
+ask-ami            ask-tiled                  hunk-review
+askcode            confluence-search          hutch-resources
+ask-epics          cuda-docs                  jira-search
+ask-lcls2          docs-search                make-goal
+ask-nersc          elog-copilot               xpm-seq
+ask-olcf           elog-search
+ask-s3df           experimental-hutch-python
+ask-slac-ai-tools  gh-skills
+ask-slurm-s3df
+ask-smalldata
 ```
 
 `make-goal` is the one Claude-only skill (`harness.targets: ["claude"]`): it
 writes a contract for Claude Code's `/goal` loop, which opencode does not have.
 `gh-skills` needs a GitHub login once, in your own terminal:
 `/sdf/group/lcls/ds/dm/apps/dev/bin/gh auth login` (see the shared-tools section).
+`hunk-review` needs a Hunk viewer open in your terminal (see **Hunk** in the
+same section).
 
 **How discovery works.** Claude Code loads skills from
 `$CLAUDE_CONFIG_DIR/skills/`, and `CLAUDE_CONFIG_DIR` must be **writable** — it
@@ -556,7 +586,7 @@ done
 **There is no `commands` directory.** `dev/claude/` contains **only** `skills/`.
 Do **not** create a `~/.claude-lcls/commands` symlink — it would dangle.
 
-**Verify.** First, the links themselves — 22 of them (a new skill appears only
+**Verify.** First, the links themselves — 23 of them (a new skill appears only
 after you re-run the installer):
 
 ```bash

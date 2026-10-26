@@ -15,6 +15,8 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/bin/docs-index` | You | Shared docs-index script (FTS5 indexer for doc collections) |
 | `dev/bin/gh` | You | Symlink to `../gh/current/bin/gh`: the shared GitHub CLI, on `PATH` in claude-lcls agent shells and inside opencode-sandbox. Used by the gh-skills skill. Each user logs in once with this absolute path |
 | `dev/gh/<ver>/`, `dev/gh/current` | You | gh releases installed by `tools/gh/install-gh.sh` (sha256 + GitHub build attestation checked, `PROVENANCE` per version). Upgrade or roll back with `--activate <ver>` |
+| `dev/bin/hunk` | You | Symlink to `../hunk/bin/hunk`, a wrapper (source `tools/hunk/hunk-wrapper.sh`) that runs `dev/hunk/current/bin/hunk` with a per-user session port (`21000 + uid % 10000`), no update check, and `hunk update` refused. On `PATH` in claude-lcls agent shells and inside opencode-sandbox; users open the viewer with this absolute path. Used by the hunk-review skill |
+| `dev/hunk/<ver>/`, `dev/hunk/current`, `dev/hunk/bin/hunk` | You | hunk releases installed by `tools/hunk/install-hunk.sh` (sha256 + GitHub build attestation checked, `PROVENANCE` per version; `skills/` sits beside `bin/` because the binary finds its bundled skills by walking up). Upgrade or roll back with `--activate <ver>`, which also refreshes the wrapper. Bump the hunk-review manifest ref to the same tag |
 | `dev/python/` | You | Shared uv-managed Python installs (3.14, 3.11, 3.9); venvs symlink here instead of per-user `~/.local/share/uv/python/`. Writable by you only (ACL `group::r-x`) |
 | `dev/opencode/opencode.json` | You | Shared config (provider, models) |
 | `dev/opencode/agents/*.md` | You | Agent definitions |
@@ -38,6 +40,7 @@ All shared files live under `/sdf/group/lcls/ds/dm/apps/`:
 | `dev/opencode/skills/elog-search/` | You | elog-search skill (live read-only search of the LCLS eLog; **per-user S3DF token**, no shared credential) |
 | `dev/opencode/skills/jira-search/` | You | jira-search skill (live JQL search of SLAC Jira, read-only; **per-user token**, no shared credential) |
 | `dev/opencode/skills/gh-skills/` | You | gh-skills skill (GitHub CLI power-user guide; runs the shared `dev/bin/gh` with the user's own `gh` login). Also in `dev/claude/skills/` |
+| `dev/opencode/skills/hunk-review/` | You | hunk-review skill (drives a Hunk viewer the user opens in their own terminal; runs the shared `dev/bin/hunk`). Also in `dev/claude/skills/`. opencode-sandbox binds `$XDG_RUNTIME_DIR/hunk-mcp` read-only so the keys reach it |
 | `dev/claude/skills/make-goal/` | You | make-goal skill (writes contracts for Claude Code's `/goal` loop). **Claude-only** (`harness.targets: ["claude"]`): opencode has no `/goal`, so there is no opencode copy |
 | `dev/data/sdf-docs/` | You | sdf-docs git repo with FTS5 search index (from slaclab/sdf-docs, branch: prod) |
 | `dev/tools/sdf-docs/` | You | sdf-docs sync scripts (daily git pull + re-index) |
@@ -126,6 +129,8 @@ Deployed files are copies (not symlinks) from these source projects:
 | `skills/gh-skills/` (both trees) | `git@github.com:carbonscott/gh-skills.git` via `skills.manifest.json` + `./deploy.sh` (`harness.source: "."`, SKILL.md at the repo root) |
 | `claude/skills/make-goal/` (claude tree only) | `git@github.com:carbonscott/make-goal.git` via `skills.manifest.json` + `./deploy.sh` (`harness.source: "."`, `harness.targets: ["claude"]`) |
 | `bin/gh`, `gh/<ver>/` | GitHub release `cli/cli` v<ver>, via `tools/gh/install-gh.sh <ver>` |
+| `skills/hunk-review/` (both trees) | `git@github.com:modem-dev/hunk.git` via `skills.manifest.json` + `./deploy.sh` (`harness.source: "packages/hunk/skills/hunk-review"`, ref = the commit of the installed release's tag) |
+| `bin/hunk`, `hunk/<ver>/`, `hunk/bin/hunk` | GitHub release `modem-dev/hunk` v<ver> (`hunkdiff-linux-x64.tar.gz`), via `tools/hunk/install-hunk.sh <ver>` |
 
 When copying agents/skills, hardcoded paths must be updated to the shared locations.
 
