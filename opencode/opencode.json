@@ -47,6 +47,7 @@
             "high":   { "thinking": { "type": "enabled", "budgetTokens": 16000 } },
             "max":    { "thinking": { "type": "enabled", "budgetTokens": 32000 } }
           },
+          "options": { "thinking": { "type": "enabled", "budgetTokens": 8000 } },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 3, "output": 15 }
         },
@@ -57,6 +58,7 @@
             "high":   { "thinking": { "type": "enabled", "budgetTokens": 16000 } },
             "max":    { "thinking": { "type": "enabled", "budgetTokens": 32000 } }
           },
+          "options": { "thinking": { "type": "enabled", "budgetTokens": 8000 } },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 5, "output": 25 }
         },
@@ -80,6 +82,7 @@
             "high":   { "effort": "high" },
             "max":    { "effort": "max" }
           },
+          "options": { "effort": "medium" },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 2, "output": 10, "cache_write": 2.50, "cache_read": 0.20 }
         },
@@ -93,6 +96,7 @@
             "high":   { "effort": "high" },
             "max":    { "effort": "max" }
           },
+          "options": { "effort": "medium" },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 5, "output": 25, "cache_write": 6.25, "cache_read": 0.50 }
         },
@@ -106,6 +110,7 @@
             "high":   { "effort": "high" },
             "max":    { "effort": "max" }
           },
+          "options": { "effort": "medium" },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 4, "output": 20, "cache_write": 5.00, "cache_read": 0.20 }
         },
@@ -119,6 +124,7 @@
             "high":   { "effort": "high" },
             "max":    { "effort": "max" }
           },
+          "options": { "effort": "medium" },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 10, "output": 50, "cache_write": 12.50, "cache_read": 0.25 }
         }
@@ -136,7 +142,7 @@
           "name": "GPT-6 Sol",
           "limit": { "context": 1050000, "output": 128000 },
           "reasoning": true,
-          "options": { "include": ["reasoning.encrypted_content"] },
+          "options": { "include": ["reasoning.encrypted_content"], "reasoningEffort": "medium", "reasoningSummary": "auto" },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 2, "output": 10, "cache_write": 2.50, "cache_read": 0.20 }
         },
@@ -144,7 +150,7 @@
           "name": "GPT-5.6 Sol",
           "limit": { "context": 1050000, "output": 128000 },
           "reasoning": true,
-          "options": { "include": ["reasoning.encrypted_content"] },
+          "options": { "include": ["reasoning.encrypted_content"], "reasoningEffort": "medium", "reasoningSummary": "auto" },
           "modalities": { "input": ["text", "image"], "output": ["text"] },
           "cost": { "input": 5, "output": 30, "cache_write": 6.25, "cache_read": 0.50 }
         }
