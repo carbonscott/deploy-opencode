@@ -4,7 +4,7 @@ Add the following to your `~/.bashrc`:
 
 ```bash
 opencode() {
-    local bin_dir="/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin"
+    local bin_dir="/sdf/group/lcls/ds/dm/apps/dev/opencode-cli/current/bin"
     local config_dir="/sdf/group/lcls/ds/dm/apps/dev/opencode"
 
     if [[ "$1" == "--local" ]]; then
@@ -13,9 +13,11 @@ opencode() {
         config_dir="$HOME/.config/opencode"
     fi
 
-    OPENCODE_CONFIG_DIR="$config_dir" PATH="$bin_dir:$PATH" command opencode "$@"
+    OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_CONFIG_DIR="$config_dir" PATH="$bin_dir:$PATH" command opencode "$@"
 }
 ```
+
+> **Already have this function?** Before 2026-10-29 it pointed `bin_dir` at `/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin`, which stays on opencode 1.2.10. Change that line (and add `OPENCODE_DISABLE_AUTOUPDATE=1`) to follow the team version, which `tools/opencode/install-opencode.sh` installs and `opencode-sandbox` runs.
 
 Then reload your shell:
 

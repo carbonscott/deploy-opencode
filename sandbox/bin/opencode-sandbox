@@ -17,6 +17,7 @@
 #   OPENCODE_SANDBOX_EXTRA  Colon-separated extra read-only bind paths
 #   OPENCODE_SANDBOX_GH=0   Do not copy your GitHub CLI (gh) login in
 #   OPENCODE_SANDBOX_HUNK=0 Do not let the agent reach the Hunk viewer you open
+#   OPENCODE_SANDBOX_VERSION=X  Run installed opencode X (e.g. 1.2.10), not the current one
 
 set -euo pipefail
 
@@ -56,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help)
-            head -20 "$0" | grep '^#' | sed 's/^# \?//'
+            head -24 "$0" | grep '^#' | sed 's/^# \?//'
             exit 0
             ;;
         --)
@@ -85,11 +86,32 @@ OPENCODE_CONFIG_DIR="/sdf/group/lcls/ds/dm/apps/dev/opencode"
 # users invoke opencode through a shell wrapper that prepends the bin dir only
 # for its own call, so a bare `exec opencode` fails with "opencode: not found".
 # Resolving the absolute path makes both execution paths work for everyone.
-OPENCODE_BIN_DIR="/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin"
+#
+# Versions live in opencode-cli/<ver>/bin, installed by
+# tools/opencode/install-opencode.sh; `current` names the one everybody runs.
+# Read the link ONCE here, so a session keeps one version even if `current`
+# moves while it runs (the agent's own `opencode` calls included).
+# OPENCODE_SANDBOX_VERSION picks another installed version: for trying a new
+# one before --activate, or for one person to step back without moving anyone.
+OPENCODE_CLI_HOME="/sdf/group/lcls/ds/dm/apps/dev/opencode-cli"
+OPENCODE_VERSION="${OPENCODE_SANDBOX_VERSION:-$(readlink "${OPENCODE_CLI_HOME}/current" 2>/dev/null || true)}"
+if [[ ! "$OPENCODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if [[ -n "${OPENCODE_SANDBOX_VERSION:-}" ]]; then
+        echo "Error: OPENCODE_SANDBOX_VERSION must look like 1.19.5 (got '${OPENCODE_SANDBOX_VERSION}')" >&2
+    else
+        echo "Error: cannot read the current opencode version from ${OPENCODE_CLI_HOME}/current" >&2
+    fi
+    exit 1
+fi
+OPENCODE_BIN_DIR="${OPENCODE_CLI_HOME}/${OPENCODE_VERSION}/bin"
 OPENCODE_BIN="${OPENCODE_BIN_DIR}/opencode"
 if [[ ! -x "$OPENCODE_BIN" ]]; then
-    echo "Error: opencode binary not found: $OPENCODE_BIN" >&2
+    echo "Error: opencode ${OPENCODE_VERSION} is not installed ($OPENCODE_BIN)" >&2
+    echo "Installed: $(cd "$OPENCODE_CLI_HOME" 2>/dev/null && ls -d [0-9]* 2>/dev/null | tr '\n' ' ')" >&2
     exit 1
+fi
+if [[ -n "${OPENCODE_SANDBOX_VERSION:-}" ]]; then
+    echo "[sandbox] Running opencode ${OPENCODE_VERSION} (OPENCODE_SANDBOX_VERSION), not the current one" >&2
 fi
 
 # --- Shared environment (single source of truth for BOTH execution paths) ---
@@ -100,6 +122,9 @@ OPENCODE_ENV=(
     "OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR}"
     "UV_CACHE_DIR=/tmp/uv-cache-${USER}"
     "UV_PYTHON_INSTALL_DIR=/sdf/group/lcls/ds/dm/apps/dev/python"
+    # The shared binary is upgraded centrally (install-opencode.sh), so hide
+    # opencode's "/update to upgrade" prompt; /update cannot work here anyway.
+    "OPENCODE_DISABLE_AUTOUPDATE=1"
     "TERM=${TERM:-xterm-256color}"
     "LANG=${LANG:-en_US.UTF-8}"
     "PATH=${OPENCODE_BIN_DIR}:/sdf/group/lcls/ds/dm/apps/dev/bin:${PATH}"
