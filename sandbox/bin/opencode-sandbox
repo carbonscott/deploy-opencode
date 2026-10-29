@@ -131,7 +131,18 @@ OPENCODE_ENV=(
 )
 
 # --- No-sandbox escape hatch ---
+OPENCODE_MAJOR="${OPENCODE_VERSION%%.*}"
 if $NO_SANDBOX; then
+    # opencode 2.x treats OPENCODE_CONFIG_DIR as the user's own, writable config
+    # folder and writes service.json (its server password) and cli.json there.
+    # Pointed at the shared folder it fails for users, and for the folder's
+    # owner it would leave a password file that all of ps-users can read. The
+    # sandbox path below gives 2.x a per-user folder instead.
+    if (( OPENCODE_MAJOR >= 2 )); then
+        echo "Error: --no-sandbox runs opencode 1.x only; opencode ${OPENCODE_VERSION} needs the sandbox." >&2
+        echo "       Pick a 1.x version with OPENCODE_SANDBOX_VERSION, or drop --no-sandbox." >&2
+        exit 1
+    fi
     echo "[sandbox] Bypassing sandbox — running OpenCode directly (shared config)." >&2
     exec env "${OPENCODE_ENV[@]}" "$OPENCODE_BIN" "${OPENCODE_ARGS[@]}"
 fi
@@ -158,6 +169,67 @@ mkdir -p "$SCRATCH_HOME" "$SCRATCH_TMP"
 # The sandbox home holds per-user secrets (see the Confluence token below) and
 # SCRATCH defaults to /tmp on a shared node, so keep it owner-only.
 chmod 700 "$SCRATCH_BASE" "$SCRATCH_HOME"
+
+# --- opencode 2.x: per-user config folder, private server, own history ---
+# 2.x differs from 1.x in three ways that matter on a shared node:
+#  - It treats OPENCODE_CONFIG_DIR as the user's own config folder and writes
+#    to it (service.json, cli.json), so it cannot point at the read-only
+#    shared folder. Instead each user gets a folder in the sandbox home made of
+#    links to the shared opencode.json, agents/, commands/ and skills/, plus
+#    the 2.x-only settings in the shared v2/opencode.jsonc. The 1.x plugin/
+#    folder is NOT linked: 1.x plugins do not load in 2.x.
+#  - By default it runs one background server per user on a fixed port
+#    (49374), which a second user on the same node cannot bind.
+#    service.json {"disabled": true} makes every session start a private
+#    server on a random port that exits with the session ("standalone").
+#  - Its first start copies 1.x sessions into new tables once; after that the
+#    two versions no longer see each other's work. So 2.x gets its own
+#    database, seeded once from a copy of the 1.x one, and going back to 1.x
+#    loses nothing.
+set_opencode_env() {
+    local i
+    for i in "${!OPENCODE_ENV[@]}"; do
+        if [[ "${OPENCODE_ENV[$i]}" == "$1="* ]]; then OPENCODE_ENV[$i]="$1=$2"; return; fi
+    done
+    OPENCODE_ENV+=("$1=$2")
+}
+if (( OPENCODE_MAJOR >= 2 )); then
+    V2_CONFIG_DIR="${SCRATCH_HOME}/.config/opencode-lcls-v2"
+    mkdir -p "$V2_CONFIG_DIR"
+    v2_link() {  # v2_link <target> <name>: (re)point a link, never touch a real file
+        local dst="${V2_CONFIG_DIR}/$2"
+        if [[ -e "$dst" && ! -L "$dst" ]]; then
+            echo "[sandbox] Warning: ${dst} is not a link; leaving it alone" >&2
+            return 0
+        fi
+        ln -sfn "$1" "$dst"
+    }
+    for name in opencode.json agents commands skills; do
+        v2_link "${OPENCODE_CONFIG_DIR}/${name}" "$name"
+    done
+    if [[ -f "${OPENCODE_CONFIG_DIR}/v2/opencode.jsonc" ]]; then
+        v2_link "${OPENCODE_CONFIG_DIR}/v2/opencode.jsonc" opencode.jsonc
+    fi
+    if [[ -d "${OPENCODE_CONFIG_DIR}/v2/plugins" ]]; then
+        v2_link "${OPENCODE_CONFIG_DIR}/v2/plugins" plugins
+    fi
+    printf '{"disabled": true}\n' > "${V2_CONFIG_DIR}/service.json"
+
+    V1_DB="${SCRATCH_HOME}/.local/share/opencode/opencode.db"
+    V2_DB="${SCRATCH_HOME}/.local/share/opencode/opencode-v2.db"
+    if [[ ! -e "$V2_DB" && -f "$V1_DB" ]]; then
+        mkdir -p "$(dirname "$V2_DB")"
+        # sqlite3's .backup takes a consistent copy even if a 1.x session is open.
+        if command -v sqlite3 >/dev/null && sqlite3 "$V1_DB" ".backup '${V2_DB}'"; then
+            echo "[sandbox] Copied your 1.x session history into opencode ${OPENCODE_MAJOR}.x's own history (one time)" >&2
+        else
+            rm -f "$V2_DB"
+            echo "[sandbox] Warning: could not copy your 1.x history; opencode ${OPENCODE_VERSION} starts with an empty one" >&2
+        fi
+    fi
+    set_opencode_env OPENCODE_CONFIG_DIR "$V2_CONFIG_DIR"
+    set_opencode_env OPENCODE_DB "$V2_DB"
+fi
 
 # --- Copy git config so commits have correct author ---
 if [[ -f "${HOME}/.gitconfig" ]]; then

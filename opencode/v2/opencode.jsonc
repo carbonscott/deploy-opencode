@@ -1,0 +1,27 @@
+// opencode 2.x ONLY. opencode-sandbox links this file into each user's 2.x
+// config folder next to the shared ../opencode.json; 1.x never reads it (it
+// sits in v2/, which 1.x does not scan). Native 2.x syntax lives here so the
+// shared opencode.json stays valid for 1.x. See CLAUDE.md "opencode 2.x".
+{
+  "providers": {
+    "slac": {
+      // 1-hour prompt cache, replacing plugin/cache-ttl.js (1.x plugins do not
+      // load in 2.x). Unlike the plugin it also covers subagents and
+      // compaction: a subagent's first cache write costs ~0.6x more.
+      "settings": { "cache": { "ttl": "1h" } },
+      "models": {
+        // small_model (session titles): keep the default 5 minutes.
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0": { "settings": { "cache": { "ttl": "5m" } } },
+        // A mid-session effort change (ctrl-t, model#variant) otherwise goes out
+        // as a per-message field, which has no effect through the LiteLLM
+        // gateway (upstream #51146); false sends it for the whole request.
+        // It must sit on each model: a provider-level value is overridden by
+        // the model entries converted from opencode.json (measured 2026-10-29).
+        "us.anthropic.claude-sonnet-5":  { "compatibility": { "supportsEffortUpdates": false } },
+        "us.anthropic.claude-opus-5":    { "compatibility": { "supportsEffortUpdates": false } },
+        "us.anthropic.claude-opus-5-5":  { "compatibility": { "supportsEffortUpdates": false } },
+        "us.anthropic.claude-fable-5-1": { "compatibility": { "supportsEffortUpdates": false } }
+      }
+    }
+  }
+}

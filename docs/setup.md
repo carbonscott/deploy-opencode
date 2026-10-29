@@ -21,6 +21,8 @@ opencode() {
 
 > **Already have this function?** Before 2026-10-29 it pointed `bin_dir` at `/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin`, which stays on opencode 1.2.10. Replace the function with the one above to follow the team version, which `tools/opencode/install-opencode.sh` installs and `opencode-sandbox` runs.
 
+This function runs the team's opencode **1.x**. Do not point it at a 2.x binary: 2.x writes into its config folder, and this one is shared. To try 2.x, use `OPENCODE_SANDBOX_VERSION=2.2.1 opencode-sandbox`.
+
 Then reload your shell:
 
 ```bash
