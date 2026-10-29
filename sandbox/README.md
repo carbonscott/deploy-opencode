@@ -74,6 +74,18 @@ To try another installed version, or to step back on your own without moving any
 
     OPENCODE_SANDBOX_VERSION=1.2.10 opencode-sandbox
 
+### Trying opencode 2.x
+
+    OPENCODE_SANDBOX_VERSION=2.2.1 opencode-sandbox
+
+1.x stays the default. For a 2.x version the launcher:
+
+- gives you your own config folder (`~/.config/opencode-lcls-v2` inside the sandbox home), made of links to the shared config plus the 2.x-only `dev/opencode/v2/opencode.jsonc`, because 2.x writes to its config folder;
+- starts a private server per session, so users on the same node do not fight over 2.x's fixed port;
+- keeps a separate session history (`opencode-v2.db`), copied from your 1.x history the first time. Going back to 1.x loses nothing, but what you do in 2.x stays in 2.x.
+
+`--no-sandbox` refuses 2.x. In 2.x, pick an effort with `-m provider/model#high` (no `--variant`). 2.x reads `AGENTS.md` but not `CLAUDE.md`. See CLAUDE.md "opencode 2.x" for the full list.
+
 The launcher sets `OPENCODE_DISABLE_AUTOUPDATE=1`, which hides opencode's "/update to upgrade to OpenCode 2" prompt; `/update` cannot replace the shared binary anyway.
 
 Until 2026-10-29 the launcher ran psdatmgr's 1.2.10 at `dev/code/.opencode/bin/opencode`, which nobody on the team can update; it is still there for anyone whose `opencode()` wrapper points at it.

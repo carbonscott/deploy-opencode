@@ -93,6 +93,12 @@ run_isolated() {
 # on its next launch; running sessions keep the version they started with.
 activate() {
   [ -x "$DEST/bin/opencode" ] || die "$DEST/bin/opencode not found; install $VER first"
+  # Making 2.x everyone's default changes more than the sandbox: the
+  # docs/setup.md opencode() wrapper runs current/bin with the SHARED config
+  # folder, which 2.x writes to (see CLAUDE.md "opencode 2.x"). Ask for it.
+  if [ "${VER%%.*}" -ge 2 ] && [ "${OPENCODE_ACTIVATE_V2:-0}" != "1" ]; then
+    die "$VER is opencode ${VER%%.*}.x: fix the docs/setup.md wrapper and read CLAUDE.md \"opencode 2.x\" first, then rerun with OPENCODE_ACTIVATE_V2=1"
+  fi
   local prev="(none)"
   [ -L "$OC_HOME/current" ] && prev="$(readlink "$OC_HOME/current")"
   if [ "$DRY_RUN" = "1" ]; then
@@ -155,6 +161,8 @@ tar -xzf "$WORK/$ASSET" -C "$WORK/x"
 [ -f "$WORK/x/opencode" ] || die "$ASSET has no opencode binary at its top level"
 chmod 0755 "$WORK/x/opencode"
 GOT="$(run_isolated "$WORK/x/opencode" --version)"
+# 1.x prints "1.19.5"; 2.x prints "opencode v2.2.1".
+GOT="${GOT##* }"
 [ "${GOT#v}" = "$VER" ] || die "extracted binary reports '$GOT', not $VER"
 BIN_SHA="$(sha256sum "$WORK/x/opencode" | awk '{ print $1 }')"
 echo "✓ binary runs here and reports $VER (binary sha256 $BIN_SHA)"
