@@ -63,7 +63,7 @@ cd sandbox && ./build.sh
 
 1. Creates per-user scratch dirs under `/tmp/$USER/opencode-sandbox/`
 2. Copies `~/.gitconfig` to the scratch home
-3. Resolves the opencode binary at `/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin/opencode` (the shell function wrapper is not available inside the container)
+3. Resolves the opencode binary by absolute path (the shell function wrapper is not available inside the container): `/sdf/group/lcls/ds/dm/apps/dev/opencode-cli/<current>/bin/opencode` since 2026-10-29, `dev/code/.opencode/bin/opencode` (psdatmgr's 1.2.10) before that
 4. Builds the full `--bind` and `--env` argument lists
 5. Execs into `apptainer run --containall`
 
@@ -135,7 +135,7 @@ OpenCode launches successfully. Agent can read databases, query Slurm, edit file
 
 **Cause:** On the host, `opencode` is a shell function defined in `~/.bashrc`. Shell functions are not available inside the container (no `.bashrc` sourced, `$HOME` hidden).
 
-**Fix:** Resolve the binary directly at `/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin/opencode` and prepend that directory to PATH inside the container.
+**Fix:** Resolve the binary directly by absolute path (then `/sdf/group/lcls/ds/dm/apps/dev/code/.opencode/bin/opencode`; since 2026-10-29 `dev/opencode-cli/<current>/bin/opencode`) and prepend that directory to PATH inside the container.
 
 ### 5. SQLite WAL-mode databases fail on read-only mounts
 

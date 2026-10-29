@@ -62,8 +62,21 @@ opencode-sandbox -- --some-opencode-flag
 | `OPENCODE_SANDBOX_EXTRA` | (none) | Colon-separated extra read-only paths |
 | `OPENCODE_SANDBOX_GH` | `1` | `0` stops the launcher copying your GitHub CLI login in (see Design notes) |
 | `OPENCODE_SANDBOX_HUNK` | `1` | `0` stops the agent reaching a Hunk viewer you open (see Design notes) |
+| `OPENCODE_SANDBOX_VERSION` | (current) | Run another installed opencode version, e.g. `1.2.10` (see [opencode version](#opencode-version)) |
 | `APPTAINERENV_*` | (none) | Any host env var prefixed with `APPTAINERENV_` is auto-forwarded into the sandbox with the prefix stripped — see [BYOK](#byok-bring-your-own-key) below |
 | `OPENCODE_CONFIG_DIR` | `/sdf/group/lcls/ds/dm/apps/dev/opencode` | OpenCode config directory |
+
+## opencode version
+
+The launcher runs `/sdf/group/lcls/ds/dm/apps/dev/opencode-cli/current/bin/opencode`. Each version sits in its own `opencode-cli/<ver>/` with a `PROVENANCE` file; `tools/opencode/install-opencode.sh` installs them and `--activate <ver>` moves `current`. There is nothing to reinstall per user: the next launch after `--activate` gets the new version, and a running session keeps the one it started with (the launcher reads `current` once). Session history in the scratch home carries over in both directions: 1.19.5 continued a 1.2.10 session, and 1.2.10 still read it afterwards (tested 2026-10-29).
+
+To try another installed version, or to step back on your own without moving anyone else:
+
+    OPENCODE_SANDBOX_VERSION=1.2.10 opencode-sandbox
+
+The launcher sets `OPENCODE_DISABLE_AUTOUPDATE=1`, which hides opencode's "/update to upgrade to OpenCode 2" prompt; `/update` cannot replace the shared binary anyway.
+
+Until 2026-10-29 the launcher ran psdatmgr's 1.2.10 at `dev/code/.opencode/bin/opencode`, which nobody on the team can update; it is still there for anyone whose `opencode()` wrapper points at it.
 
 ## BYOK (Bring Your Own Key)
 
