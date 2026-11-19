@@ -1215,10 +1215,23 @@ step "Config dir: $LCLS_DIR"
 #                                   auto-memory directory.
 # MODEL WIRING. The four ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
 # opus / sonnet / haiku / fable aliases onto the Bedrock ids the SLAC gateway
-# serves, so /model opus selects Opus 5.5, /model sonnet selects Sonnet 5 and
-# /model fable selects Fable 5.1. The gateway offers more than those four --
-# Opus 5, 4.8, 4.7, 4.6 and Sonnet 4.6 are all live on it -- but an alias can
-# only point at one id.
+# serves, so /model opus selects Opus 5.5, /model sonnet selects Sonnet 5.5,
+# /model haiku selects Haiku 5.5 and /model fable selects Fable 5.1. The gateway
+# offers more than those four -- Opus 5, 4.8, 4.7, 4.6, Sonnet 5, Sonnet 4.6 and
+# Haiku 4.5 are all live on it -- but an alias can only point at one id.
+#
+# SONNET 5.5 AND HAIKU 5.5 ARE THE sonnet AND haiku ALIASES since 2026-11-19,
+# the day the gateway announced them. Both need 2.1.311+ (pinned the same day):
+# 2.1.285 has zero occurrences of "haiku-5-5". On 2.1.311 both report 1000000 /
+# 128000 with the plain id. sonnet keeps [1m] so a rollback to 2.1.285 (which
+# knows sonnet-5-5) keeps the 1M window; haiku is written plain because no
+# older binary knows it anyway. A raw ttl "1h" request landed in ephemeral_1h
+# for both. haiku is also what Claude Code uses for background work (titles,
+# summaries), and Haiku 5.5 costs about a tenth of Haiku 4.5 on the gateway
+# ($0.11 / $0.55 per MTok against $1.10 / $5.50). The previous ids stay
+# reachable by name: --model "us.anthropic.claude-sonnet-5[1m]" (also in the
+# /model menu, see ANTHROPIC_CUSTOM_MODEL_OPTION) and
+# --model us.anthropic.claude-haiku-4-5-20251001-v1:0.
 #
 # THE opus ALIAS IS ALSO THE DEFAULT MODEL. With no `model` key in settings.json
 # (this template deliberately writes none), plain `claude-lcls`, `--model opus`
@@ -1259,10 +1272,11 @@ step "Config dir: $LCLS_DIR"
 # ANTHROPIC_CUSTOM_MODEL_OPTION is how anything else reaches the picker. Claude
 # Code APPENDS it to the model list rather than replacing an entry, using
 # _NAME as the label and _DESCRIPTION as the subtitle. It is a SINGLE slot:
-# there is no numbered second one, so exactly one extra model can be offered and
-# Sonnet 4.6 is the one chosen. Anyone needing a different one can still name it
-# explicitly with `claude-lcls --model us.anthropic.claude-opus-4-8`; the slot
-# only decides what appears in the menu without being typed.
+# there is no numbered second one, so exactly one extra model can be offered.
+# It holds the previous Sonnet: Sonnet 4.6 until 2026-11-19, Sonnet 5 since the
+# sonnet alias moved to Sonnet 5.5. Anyone needing a different one can still name
+# it explicitly with `claude-lcls --model us.anthropic.claude-sonnet-4-6`; the
+# slot only decides what appears in the menu without being typed.
 #
 # All five ids were answered by the gateway on 2026-09-19: opus-5[1m],
 # sonnet-5[1m], fable-5-1[1m], sonnet-4-6 and haiku-4-5 each returned a
@@ -1325,6 +1339,12 @@ step "Config dir: $LCLS_DIR"
 # finds every key written below in 2.1.285 too, and all five aliases (opus,
 # sonnet, fable, best, haiku) answered on the staged binary before publishing.
 #
+# And to 2.1.311 (the stable channel) on 2026-11-19 for Haiku 5.5, which 2.1.285
+# does not know. Every key written below is in 2.1.311 too; on the staged binary
+# the default, opus, sonnet, haiku, fable and the custom slot all answered with
+# 1M windows and 1h cache writes, and a Bash call, a subagent, --json-schema and
+# /compact + --resume passed on Opus 5.5 and Sonnet 5.5.
+#
 # Two things measured against the 2.1.235 binary that are easy to get wrong:
 #
 #   1. There is no "memory" object and no "autoMemory" key in the settings
@@ -1354,11 +1374,11 @@ read -r -d '' SETTINGS_JSON <<EOF || true
   "env": {
     "ANTHROPIC_BASE_URL": "$BASE_URL",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5-5[1m]",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5-5[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-5-5",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION": "us.anthropic.claude-sonnet-4-6",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Sonnet 4.6",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "us.anthropic.claude-sonnet-5[1m]",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Sonnet 5",
     "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "Previous Sonnet, kept selectable via the SLAC gateway",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",

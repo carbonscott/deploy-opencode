@@ -15,6 +15,7 @@
   "// _12_": "ignored. The shared binary pin lives in tools/claude-binary/env.sh.",
   "// _13_": "opus is Opus 5.5 (and the default model) since 2026-10-13; needs 2.1.285+.",
   "// _14_": "Opus 5 stays reachable with --model us.anthropic.claude-opus-5[1m].",
+  "// _14b_": "sonnet is Sonnet 5.5 and haiku is Haiku 5.5 since 2026-11-19; both need 2.1.311+.",
   "// _15_": "apiKeyHelper: install-claude-lcls.sh writes the ABSOLUTE path of YOUR key file,",
   "// _16_": "$HOME/.config/slac-ai/key.dat (mode 600). Replace /YOUR/HOME by hand if you copy this.",
 
@@ -26,8 +27,8 @@
     "// ANTHROPIC_AUTH_TOKEN": "PASTE-YOUR-SLAC-API-KEY-HERE (only if you delete apiKeyHelper above)",
 
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-5-5[1m]",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5[1m]",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5-5[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-5-5",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "us.anthropic.claude-fable-5-1[1m]",
 
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
