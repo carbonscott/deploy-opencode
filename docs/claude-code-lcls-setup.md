@@ -665,8 +665,10 @@ Anthropic models served as of **2026-09-19** (`GET /v1/models` → `200`):
 | `us.anthropic.claude-opus-4-8` | 1,000,000 | 128,000 | listed |
 | `us.anthropic.claude-opus-4-7` | 1,000,000 | 128,000 | listed |
 | `us.anthropic.claude-opus-4-6-v1` | 1,000,000 | 128,000 | listed |
+| `us.anthropic.claude-sonnet-5-5` | 1,000,000 | 128,000 | added 2026-11-19; `POST /v1/messages` → `200`, 1h cache |
 | `us.anthropic.claude-sonnet-5` | 1,000,000 | 128,000 | listed + `POST /v1/messages` → `200` |
 | `us.anthropic.claude-sonnet-4-6` | 1,000,000 | 64,000 | listed |
+| `us.anthropic.claude-haiku-5-5` | 1,000,000 | 128,000 | added 2026-11-19; `POST /v1/messages` → `200`, 1h cache |
 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | 200,000 | 64,000 | listed + `POST /v1/messages` → `200` |
 
 ¹ Anthropic's figures. The listing itself says 200,000 / 64,000 for Opus 5.5, but
@@ -681,7 +683,18 @@ Messages API.
 
 **Claude 5 is available, including Fable 5.1.** The previously documented pins
 (Sonnet 4.6, Opus 4.8) still work but are a generation behind; the template uses
-Opus 5.5, Sonnet 5, and Fable 5.1.
+Opus 5.5, Sonnet 5.5, Haiku 5.5, and Fable 5.1.
+
+**Sonnet 5.5 and Haiku 5.5 are the `sonnet` and `haiku` aliases since
+2026-11-19** (`us.anthropic.claude-sonnet-5-5[1m]` and
+`us.anthropic.claude-haiku-5-5`). Both need Claude Code 2.1.311+, the shared pin
+since the same day. Haiku is also what Claude Code uses for background work, and
+Haiku 5.5 costs about a tenth of Haiku 4.5 on the gateway. The `/model` menu's
+extra entry is now Sonnet 5, the previous Sonnet. The old ids stay reachable by
+name: `--model "us.anthropic.claude-sonnet-5[1m]"`,
+`--model us.anthropic.claude-sonnet-4-6` and
+`--model us.anthropic.claude-haiku-4-5-20251001-v1:0`. Existing users get the
+aliases only when they re-run `install-claude-lcls.sh`.
 
 **Opus 5.5 is the default model since 2026-10-13.** The `opus` alias points at
 `us.anthropic.claude-opus-5-5[1m]`, and with no `model` key in `settings.json`,
@@ -749,8 +762,9 @@ documented contract.
 Use the suffixed form anyway, so a rollback to 2.1.267 keeps the 1M window.
 
 `--model best` resolves to `us.anthropic.claude-fable-5-1[1m]` at 1,000,000.
-`haiku` reports 200,000, which is Haiku 4.5's native size on the gateway rather
-than a missing suffix.
+`haiku` reported 200,000 while it was Haiku 4.5, which is that model's native
+size on the gateway rather than a missing suffix. Haiku 5.5 (the `haiku` alias
+since 2026-11-19) reports 1,000,000 from the plain id on 2.1.311.
 
 `max_output_tokens` stays at 64,000 in every case even though the gateway
 advertises 128,000. `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is the likely lever; untested.

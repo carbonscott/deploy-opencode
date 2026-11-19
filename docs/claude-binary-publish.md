@@ -151,7 +151,8 @@ so the next `claude-lcls` invocation picks up the flip.
 |---|---|---|---|
 | 2.1.235 | 2026-08-28 | published, kept as rollback target | First publish. Measurements in this repo dated before 2026-09-19 were made against it. |
 | 2.1.267 | 2026-09-19 | published; active until 2026-10-07, now the rollback target | `promptCacheTtl`, which needs 2.1.242+. |
-| 2.1.285 | 2026-10-07 | **published + active** since 2026-10-07 | Opus 5.5 (`us.anthropic.claude-opus-5-5`), which 2.1.267 does not recognize. Opt-in at first; the `opus` alias and default since 2026-10-13. |
+| 2.1.285 | 2026-10-07 | published; active until 2026-11-19, now the rollback target | Opus 5.5 (`us.anthropic.claude-opus-5-5`), which 2.1.267 does not recognize. Opt-in at first; the `opus` alias and default since 2026-10-13. |
+| 2.1.311 | 2026-11-19 | **published + active** since 2026-11-19 | Haiku 5.5 (`us.anthropic.claude-haiku-5-5`), which 2.1.285 does not recognize. Sonnet 5.5 and Haiku 5.5 became the `sonnet` and `haiku` aliases the same day. |
 
 ### A `verify` FAIL that is expected, not a defect
 
@@ -374,6 +375,45 @@ installer. If Opus 5.5 ever falls back to a five-minute cache, moving the alias
 back is the same one-line change. Re-check with the `cache_creation` one-liner
 above, from a `claude-lcls` config. Plain `claude` on S3DF signs in to Anthropic
 directly rather than going through the gateway, so it proves nothing here.
+
+### 2.1.311 — the Sonnet 5.5 / Haiku 5.5 bump
+
+`env.sh` now pins `2.1.311`, the `stable` channel on 2026-11-19 (`latest` was
+2.1.327). The gateway started serving `us.anthropic.claude-sonnet-5-5` and
+`us.anthropic.claude-haiku-5-5` that day. 2.1.285 already knows Sonnet 5.5 (14
+occurrences of `sonnet-5-5`) but has **zero** of `haiku-5-5`; 2.1.311 has 11.
+
+Raw gateway check (`ttl: "1h"`, no beta header): both new models landed entirely
+in `ephemeral_1h`, like the Sonnet 5 control. `GET /v1/model/info` lists both at
+1,000,000 input / 128,000 output. LiteLLM prices per MTok (input / output /
+cache write / cache read): Sonnet 5.5 2.2 / 11 / 2.75 / 0.11; Haiku 5.5 0.11 /
+0.55 / 0.138 / 0.011, about a tenth of Haiku 4.5 (1.1 / 5.5).
+
+Every key the installer writes is present in 2.1.311 (counts 2.1.285 → 2.1.311):
+`promptCacheTtl` 4 → 5, `ANTHROPIC_DEFAULT_HAIKU_MODEL` 19 → 19,
+`ANTHROPIC_CUSTOM_MODEL_OPTION` 13 → 13, `autoMemoryEnabled` 8 → 8,
+`showThinkingSummaries` 7 → 9, `skipWebFetchPreflight` 8 → 11,
+`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` 13 → 13, `DISABLE_AUTOUPDATER` 8 → 9.
+
+On the staged binary, with a throwaway config holding the new template values:
+
+| Flag | Resolves to | Context | Max output | Cache bucket |
+|---|---|---:|---:|---|
+| (none) / opus | `us.anthropic.claude-opus-5-5` | 1,000,000 | 128,000 | 1h |
+| sonnet | `us.anthropic.claude-sonnet-5-5` | 1,000,000 | 128,000 | 1h |
+| haiku | `us.anthropic.claude-haiku-5-5` | 1,000,000 | 128,000 | 1h |
+| fable | `us.anthropic.claude-fable-5-1` | 1,000,000 | 64,000 | 1h |
+| `us.anthropic.claude-sonnet-5[1m]` (custom slot) | `us.anthropic.claude-sonnet-5` | 1,000,000 | 64,000 | 1h |
+| plain `us.anthropic.claude-sonnet-5-5` | same | 1,000,000 | 128,000 | 1h |
+
+Both new models report 1M from the plain id. `sonnet` keeps `[1m]` anyway so a
+rollback to 2.1.285 keeps the window; `haiku` is written plain because no older
+binary knows it. Fable 5.1 and Sonnet 5 report a 64,000 output cap on 2.1.285
+too, so that is not a change. Smoke tests passed on Opus 5.5 and Sonnet 5.5
+alike: a Bash call, a general-purpose subagent, `--json-schema`, and `/compact`
+followed by `--resume` recalling a word. Haiku 5.5 as the main model ran a Bash
+call. An Explore subagent ran on the main model in 2.1.311, so it does not
+exercise the haiku alias.
 
 ### The gateway's Opus 5.5 limits are stale metadata
 
