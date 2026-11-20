@@ -6,7 +6,7 @@ Everything ran on sdfiana024, in a shell set up the way a client reported it:
 
 | File | What it is |
 |---|---|
-| `proof.html` | The proof page: verdicts, a one-take screencast (09:52–10:02 PT) with chapters, the checks table, captured screens, an independent read-back from `/proc`, findings and an audit trail. Self-contained; download it and open it in a browser. |
+| `proof.html` | The proof page: verdicts, a one-take screencast (09:52–10:02 PT) with chapters, the checks table, captured screens, an independent read-back from `/proc`, findings and an audit trail. Live at https://carbonscott.github.io/deploy-opencode/2026-11-20-claude-lcls-launcher/proof.html; the file is self-contained and also opens offline. The account name and SLAC email in the recording are masked. |
 | `proof.sh` | The check script. Each expected value is written in it before its measurement. Runs every case in a throwaway `HOME` under node-local `/tmp` with its own `GNUPGHOME`. |
 | `recheck.sh` | The re-check chapter run in the recorded take, after three first-pass checks failed for reasons in the test script (see below). |
 | `checks-take.tsv` | Results of the recorded take: 24 PASS, 3 FAIL (A4, E1, H1), plus re-checks A4r, E1r, H1r, all PASS. |
