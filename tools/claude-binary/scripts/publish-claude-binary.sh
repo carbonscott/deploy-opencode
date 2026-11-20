@@ -14,6 +14,8 @@
 #   claude/bin/current          symlink -> versions/<ver>; the rollback pivot
 #   claude/bin/VERSIONS.json    what is published, its SHA-256, when, by whom
 #   claude/install-claude-lcls.sh   (`installer` mode only)
+#   claude/bin/claude-lcls          the shared launcher (`installer` mode only)
+#   claude/shared-settings.json     gateway URL + model aliases (`installer` mode only)
 #
 # Provenance is never assumed. Every binary is checked against the SHA-256 in
 # Anthropic's own release manifest before it is published, and again after it
@@ -53,6 +55,15 @@ INSTALLER_SRC="$CLAUDE_BINARY_SRC_REPO/claude/install-claude-lcls.sh"
 # happens to be checked out in the source repo. See cmd_verify.
 INSTALLER_REF="${INSTALLER_REF:-origin/main}"
 INSTALLER_DST="$CLAUDE_TREE_ROOT/install-claude-lcls.sh"
+# Published together with the installer, since 2026-11-20. The installer's
+# shell function is a one-line call to the launcher, and the launcher passes
+# the shared settings file with --settings, so these two are live for every
+# claude-lcls user the moment they land -- no re-run needed, unlike the
+# installer's own settings template.
+LAUNCHER_SRC="$CLAUDE_BINARY_SRC_REPO/claude/claude-lcls"
+LAUNCHER_DST="$CLAUDE_BIN_ROOT/claude-lcls"
+SHARED_SETTINGS_SRC="$CLAUDE_BINARY_SRC_REPO/claude/shared-settings.json"
+SHARED_SETTINGS_DST="$CLAUDE_TREE_ROOT/shared-settings.json"
 
 log()  { echo "$(date '+%Y-%m-%d %H:%M:%S') - $*"; }
 die()  { echo "ERROR: $*" >&2; exit 2; }
@@ -210,6 +221,8 @@ cmd_plan() {
     printf '  %-52s %s\n' "$CURRENT_LINK"              "$([[ -L $CURRENT_LINK ]] && echo "symlink -> $(readlink "$CURRENT_LINK") — would be REPOINTED" || echo 'WOULD CREATE')"
     printf '  %-52s %s\n' "$VERSIONS_JSON"             "$([[ -f $VERSIONS_JSON ]] && echo 'exists — would be REWRITTEN' || echo 'WOULD CREATE (0644)')"
     printf '  %-52s %s\n' "$INSTALLER_DST"             "$([[ -f $INSTALLER_DST ]] && echo 'exists — `installer` mode would REPLACE' || echo '`installer` mode WOULD CREATE (0755)')"
+    printf '  %-52s %s\n' "$LAUNCHER_DST"              "$([[ -f $LAUNCHER_DST ]] && echo 'exists — `installer` mode would REPLACE' || echo '`installer` mode WOULD CREATE (0755)')"
+    printf '  %-52s %s\n' "$SHARED_SETTINGS_DST"       "$([[ -f $SHARED_SETTINGS_DST ]] && echo 'exists — `installer` mode would REPLACE' || echo '`installer` mode WOULD CREATE (0644)')"
     echo
     printf '  %-52s %s\n' "staged binary" "$([[ -f $staged ]] && echo "$staged" || echo 'not fetched yet — run `fetch` first')"
     echo
@@ -322,24 +335,46 @@ cmd_activate() {
     write_versions_json "$ver" "$MF_SUM" "$MF_SIZE"
 }
 
-cmd_installer() {
-    local before after
-    [[ -f "$INSTALLER_SRC" ]] || die "installer not found: $INSTALLER_SRC"
+# `installer` mode publishes three files, in this order: the shared settings,
+# the launcher that reads them, then the installer whose shell function calls
+# the launcher. Each step only adds something the next one needs, so stopping
+# part way never leaves a live installer pointing at a missing launcher.
+# Format: src|dst|mode
+installer_files() {
+    printf '%s|%s|%s\n' \
+        "$SHARED_SETTINGS_SRC" "$SHARED_SETTINGS_DST" 0644 \
+        "$LAUNCHER_SRC"        "$LAUNCHER_DST"        0755 \
+        "$INSTALLER_SRC"       "$INSTALLER_DST"       0755
+}
 
-    before="$([[ -f "$INSTALLER_DST" ]] && md5sum "$INSTALLER_DST" | cut -d' ' -f1 || echo '(absent)')"
-    echo "Would publish the installer:"
-    echo "  $INSTALLER_SRC"
-    echo "    md5 $(md5sum "$INSTALLER_SRC" | cut -d' ' -f1)"
-    echo "    -> $INSTALLER_DST   (0755, $CLAUDE_BINARY_GROUP)"
-    echo "    live copy now: $before"
+cmd_installer() {
+    local src dst mode before after
+    while IFS='|' read -r src dst mode; do
+        [[ -f "$src" ]] || die "not found: $src"
+    done < <(installer_files)
+    jq -e .env "$SHARED_SETTINGS_SRC" >/dev/null 2>&1 \
+        || die "$SHARED_SETTINGS_SRC does not parse or has no env block"
+    bash -n "$LAUNCHER_SRC" || die "$LAUNCHER_SRC has a syntax error"
+
+    echo "Would publish:"
+    while IFS='|' read -r src dst mode; do
+        before="$([[ -f "$dst" ]] && md5sum "$dst" | cut -d' ' -f1 || echo '(absent)')"
+        echo "  $src"
+        echo "    md5 $(md5sum "$src" | cut -d' ' -f1)"
+        echo "    -> $dst   ($mode, $CLAUDE_BINARY_GROUP)"
+        echo "    live copy now: $before"
+    done < <(installer_files)
     require_write_gates "installer"
 
     ensure_dir "$CLAUDE_TREE_ROOT" 2750
-    atomic_install "$INSTALLER_SRC" "$INSTALLER_DST" 0755
-    after="$(md5sum "$INSTALLER_DST" | cut -d' ' -f1)"
-    [[ "$after" == "$(md5sum "$INSTALLER_SRC" | cut -d' ' -f1)" ]] \
-        || die "published installer does not match source"
-    log "published $INSTALLER_DST (md5 $after)"
+    ensure_dir "$CLAUDE_BIN_ROOT" 2755
+    while IFS='|' read -r src dst mode; do
+        atomic_install "$src" "$dst" "$mode"
+        after="$(md5sum "$dst" | cut -d' ' -f1)"
+        [[ "$after" == "$(md5sum "$src" | cut -d' ' -f1)" ]] \
+            || die "published $dst does not match source"
+        log "published $dst (md5 $after)"
+    done < <(installer_files)
 }
 
 # VERSIONS.json records what is published and where it came from, so a later
@@ -448,11 +483,16 @@ cmd_verify() {
         getfacl -p "$CLAUDE_BIN_ROOT" 2>/dev/null | sed -n '/^\(user\|group\|other\|mask\)/s/^/  /p'
     fi
 
-    if [[ -f "$INSTALLER_DST" ]]; then
-        echo "── installer"
-        printf '  %-52s %s %s md5 %s\n' "$INSTALLER_DST" \
-            "$(stat -c %a "$INSTALLER_DST")" "$(stat -c %G "$INSTALLER_DST")" \
-            "$(md5sum "$INSTALLER_DST" | cut -d' ' -f1)"
+    local src dst mode rel
+    while IFS='|' read -r src dst mode; do
+        [[ -f "$dst" ]] || continue
+        rel="${src#"$CLAUDE_BINARY_SRC_REPO"/}"
+        echo "── $rel"
+        printf '  %-52s %s %s md5 %s\n' "$dst" \
+            "$(stat -c %a "$dst")" "$(stat -c %G "$dst")" \
+            "$(md5sum "$dst" | cut -d' ' -f1)"
+        [[ "$(stat -c %G "$dst")" == "$CLAUDE_BINARY_GROUP" ]] \
+            || { fail "$dst is group $(stat -c %G "$dst"), expected $CLAUDE_BINARY_GROUP"; rc=1; }
         # Compare against $INSTALLER_REF, not against the working tree.
         # CLAUDE_BINARY_SRC_REPO is a SHARED checkout that more than one session
         # uses, so it frequently sits on a feature branch, and the file there is
@@ -469,18 +509,41 @@ cmd_verify() {
         # ref's short SHA is printed because a LOCAL origin/main can be stale,
         # and a stale comparison should be diagnosable rather than mysterious.
         local want_md5="" want_desc="" ref_sha=""
-        if git -C "$CLAUDE_BINARY_SRC_REPO" cat-file -e "$INSTALLER_REF:claude/install-claude-lcls.sh" 2>/dev/null; then
-            want_md5="$(git -C "$CLAUDE_BINARY_SRC_REPO" show "$INSTALLER_REF:claude/install-claude-lcls.sh" | md5sum | cut -d' ' -f1)"
+        if git -C "$CLAUDE_BINARY_SRC_REPO" cat-file -e "$INSTALLER_REF:$rel" 2>/dev/null; then
+            want_md5="$(git -C "$CLAUDE_BINARY_SRC_REPO" show "$INSTALLER_REF:$rel" | md5sum | cut -d' ' -f1)"
             ref_sha="$(git -C "$CLAUDE_BINARY_SRC_REPO" rev-parse --short "$INSTALLER_REF" 2>/dev/null || echo '?')"
             want_desc="$INSTALLER_REF ($ref_sha)"
-        elif [[ -f "$INSTALLER_SRC" ]]; then
-            want_md5="$(md5sum "$INSTALLER_SRC" | cut -d' ' -f1)"
-            want_desc="working tree $INSTALLER_SRC (could not read $INSTALLER_REF -- may be any branch)"
+        elif [[ -f "$src" ]]; then
+            want_md5="$(md5sum "$src" | cut -d' ' -f1)"
+            want_desc="working tree $src (could not read $INSTALLER_REF -- may be any branch)"
         fi
         if [[ -n "$want_md5" ]]; then
             echo "  compared against: $want_desc"
-            [[ "$(md5sum "$INSTALLER_DST" | cut -d' ' -f1)" == "$want_md5" ]] \
-                || { fail "published installer differs from $want_desc"; rc=1; }
+            [[ "$(md5sum "$dst" | cut -d' ' -f1)" == "$want_md5" ]] \
+                || { fail "published $rel differs from $want_desc"; rc=1; }
+        fi
+    done < <(installer_files)
+
+    # The launcher passes shared-settings.json with --settings, which outranks
+    # each user's settings.json, while Cogito and a bare CLAUDE_CONFIG_DIR run
+    # read the installer's copy. The two must name the same ids, or the model a
+    # user gets depends on how they started Claude Code.
+    if [[ -f "$SHARED_SETTINGS_DST" && -f "$INSTALLER_DST" ]]; then
+        echo "── shared settings vs the installer's template"
+        local key val
+        if ! jq -e .env "$SHARED_SETTINGS_DST" >/dev/null 2>&1; then
+            fail "$SHARED_SETTINGS_DST does not parse or has no env block"; rc=1
+        else
+            while IFS=$'\t' read -r key val; do
+                if grep -qF "\"$key\": \"$val\"" "$INSTALLER_DST"; then
+                    printf '  %-44s same\n' "$key"
+                elif [[ "$key" == ANTHROPIC_BASE_URL ]] && grep -qF "\"$key\": \"\$BASE_URL\"" "$INSTALLER_DST" \
+                     && grep -qF "BASE_URL=\"\${BASE_URL:-$val}\"" "$INSTALLER_DST"; then
+                    printf '  %-44s same (installer default)\n' "$key"
+                else
+                    fail "$key=$val in $SHARED_SETTINGS_DST is not what the installer writes"; rc=1
+                fi
+            done < <(jq -r '.env | to_entries[] | "\(.key)\t\(.value)"' "$SHARED_SETTINGS_DST")
         fi
     fi
 

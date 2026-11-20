@@ -27,13 +27,30 @@ One team binary, published once, removes all three.
 ```
 /sdf/group/lcls/ds/dm/apps/dev/claude/        2750 cwang31:ps-users
 ├── install-claude-lcls.sh                    0755 ps-users   (published by `installer` mode)
+├── shared-settings.json                      0644 ps-users   (published by `installer` mode)
 ├── skills/                                   2750 ps-users   (published by deploy.sh)
 └── bin/                                      2755 ps-users
+    ├── claude-lcls                           0755 ps-users   (published by `installer` mode)
     ├── versions/
     │   └── 2.1.235                           0755 ps-users
     ├── current -> versions/2.1.235
     └── VERSIONS.json                         0644 ps-users
 ```
+
+**Since 2026-11-20, `installer` mode publishes three files**, in this order:
+`shared-settings.json` (the gateway URL and model aliases), `bin/claude-lcls`
+(the launcher the users' `claude-lcls` shell function calls), then the
+installer. The first two are **live for every user the moment they land**:
+the launcher passes `shared-settings.json` with `--settings`, which outranks each
+user's `settings.json`. So a model move is now an edit to
+`claude/shared-settings.json` (and the same values in the installer template)
+plus `installer` mode, with no user re-run. Users need one re-run to get the
+new shell function; until then they keep the old one and nothing breaks.
+
+`verify` compares all three against `INSTALLER_REF` and checks that every entry
+in `shared-settings.json` is what the installer writes into `settings.json`.
+Cogito and a bare `CLAUDE_CONFIG_DIR=~/.claude-lcls claude` read only the
+latter, so the two must agree.
 
 `bin/` sits inside `claude/` rather than beside `uv` in `dev/bin/` on purpose.
 `claude/` is mode 2750, so its audience is exactly `ps-users` — the same audience

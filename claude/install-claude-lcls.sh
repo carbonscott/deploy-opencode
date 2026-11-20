@@ -40,6 +40,14 @@
 # sessions and transcripts included. Nothing is shared between users except the
 # read-only binary and the read-only skills.
 #
+# The `claude-lcls` function this writes into ~/.bashrc and ~/.zshrc is a
+# one-line call to a SHARED launcher, /sdf/group/lcls/ds/dm/apps/dev/claude/
+# bin/claude-lcls (claude/claude-lcls in the repo). The launcher drops any
+# ANTHROPIC_* or CLAUDE_CODE_* variable other software left in your shell, and
+# passes a shared settings file (claude/shared-settings.json) holding the
+# gateway URL and the model aliases. Both are updated centrally, so a model
+# move reaches you without re-running this script. Since 2026-11-20.
+#
 # claude-lcls also puts the shared team tools directory
 # (/sdf/group/lcls/ds/dm/apps/dev/bin, where `uv` lives) FIRST on PATH for its
 # own sessions only, so every `uv` a session runs -- a skill's or an agent's
@@ -82,6 +90,16 @@ RESET="${RESET:-0}"
 # and no action from you. Never resolve this to a pinned version: the whole
 # point is that the deployment decides which version everyone runs.
 SHARED_BIN="${SHARED_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
+
+# The shared launcher the claude-lcls function calls (claude/claude-lcls in the
+# repo), and the shared settings file it passes with --settings
+# (claude/shared-settings.json). Both are published with this installer. Since
+# 2026-11-20 the function is a one-line call to the launcher, so whatever the
+# launcher does -- dropping stray ANTHROPIC_* / CLAUDE_CODE_* variables,
+# PATH, the gateway URL and model aliases -- changes for everyone when it is
+# republished, with no re-run here. Overridable only to test unpublished copies.
+LAUNCHER="${CLAUDE_LCLS_LAUNCHER:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/claude-lcls}"
+SHARED_SETTINGS="${CLAUDE_LCLS_SETTINGS-/sdf/group/lcls/ds/dm/apps/dev/claude/shared-settings.json}"
 
 # Shared team tools, PREPENDED to PATH inside claude-lcls sessions. This is where
 # `uv` lives, and many deployed skills (confluence-search, jira-search,
@@ -577,6 +595,53 @@ CLAUDE_VER="$("$CLAUDE_BIN" --version 2>&1 | head -1)" \
 ok "claude found: $CLAUDE_BIN ($CLAUDE_VER)"
 if [ "$CLAUDE_BIN" = "$SHARED_BIN" ] && [ -L "$SHARED_BIN" ]; then
   ok "shared team binary, resolving to $(readlink "$SHARED_BIN")"
+fi
+
+# The function written below is a one-line call to the shared launcher, so the
+# launcher must run. Same audience as the binary: ps-users.
+[ -x "$LAUNCHER" ] \
+  || die "cannot run the shared launcher $LAUNCHER -- it is deployed for ps-users, like the binary. You are in: $(id -nG)"
+ok "shared launcher: $LAUNCHER"
+if [ -n "$SHARED_SETTINGS" ]; then
+  if [ -r "$SHARED_SETTINGS" ]; then
+    ok "shared settings (gateway URL, model aliases): $SHARED_SETTINGS"
+  else
+    warn "shared settings not readable: $SHARED_SETTINGS"
+    warn "$FUNC_NAME still works from your settings.json, but model moves will need re-runs"
+  fi
+fi
+
+# Stray variables. Other software exports ANTHROPIC_* and CLAUDE_CODE_* for its
+# own use, and Claude Code lets such a variable win whenever settings.json does
+# not set the same name. The launcher drops them all (see claude/claude-lcls);
+# this just says so. ANTHROPIC_AUTH_TOKEN gets a pointer to where it is set:
+# it outranks apiKeyHelper, and on 2026-11-20 a placeholder there turned every
+# claude-lcls request into a 401 ("Received=your****Here") and made this
+# script's verification step sit silently for three minutes. Line numbers only;
+# a value is never printed.
+_stray=""
+for _n in $(compgen -e); do
+  case "$_n" in ANTHROPIC_*|CLAUDE_CODE_*) _stray="$_stray $_n" ;; esac
+done
+if [ -n "$_stray" ]; then
+  ok "$FUNC_NAME ignores these variables from your shell:$_stray"
+fi
+if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+  _where=""
+  for _f in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile" \
+            "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.zshenv" "$HOME/.zlogin"; do
+    [ -f "$_f" ] || continue
+    for _l in $(grep -n -E '(^|[^A-Za-z0-9_])ANTHROPIC_AUTH_TOKEN=' "$_f" 2>/dev/null | cut -d: -f1); do
+      _where="$_where ~${_f#"$HOME"}:$_l"
+    done
+  done
+  warn "ANTHROPIC_AUTH_TOKEN is set in your shell. $FUNC_NAME drops it and uses your key file,"
+  warn "but any other Claude Code you run will send it instead of a real key."
+  if [ -n "$_where" ]; then
+    warn "it is set at:$_where -- remove it unless you need it elsewhere"
+  else
+    warn "no shell startup file sets it; look for a module, conda env or another tool's setup script"
+  fi
 fi
 
 # Shared tools are a convenience, not a requirement -- most skills do not need
@@ -1213,7 +1278,16 @@ step "Config dir: $LCLS_DIR"
 #   showThinkingSummaries false     no API-side thinking summaries.
 #   autoMemoryEnabled false         Claude neither reads nor writes the
 #                                   auto-memory directory.
-# MODEL WIRING. The four ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
+# MODEL WIRING LIVES IN TWO PLACES since 2026-11-20. claude/shared-settings.json
+# carries ANTHROPIC_BASE_URL and every model entry below, and the launcher
+# passes it with --settings, which outranks this file (measured on 2.1.311).
+# So for claude-lcls sessions THAT file decides, and a model move is an edit
+# there plus a publish. The copies here stay because other readers of this
+# file use them: Cogito builds its provider from this profile, and a
+# hand-run `CLAUDE_CONFIG_DIR=~/.claude-lcls claude` sees only this file.
+# Keep the values identical; publish-claude-binary.sh `verify` checks it.
+#
+# The four ANTHROPIC_DEFAULT_*_MODEL entries map Claude Code's
 # opus / sonnet / haiku / fable aliases onto the Bedrock ids the SLAC gateway
 # serves, so /model opus selects Opus 5.5, /model sonnet selects Sonnet 5.5,
 # /model haiku selects Haiku 5.5 and /model fable selects Fable 5.1. The gateway
@@ -1538,7 +1612,17 @@ MERGE_PYEOF
       rm -f "$_tmpl" "$_mrg"
     fi
   fi
-  ok "no key is stored here — apiKeyHelper reads it from $USER_KEY_FILE at runtime"
+  # A token pasted into settings.json outranks apiKeyHelper, and the launcher
+  # cannot drop it: it never passes through the environment. The docs still
+  # describe that form for hand setups, so warn rather than delete. The
+  # template's "// ANTHROPIC_AUTH_TOKEN" comment key does not match, because
+  # here the quote must sit directly before the name.
+  if [ -f "$SETTINGS_DST" ] && grep -q '"ANTHROPIC_AUTH_TOKEN"' "$SETTINGS_DST"; then
+    warn "$SETTINGS_DST sets env.ANTHROPIC_AUTH_TOKEN, which Claude Code uses INSTEAD of"
+    warn "your key file $USER_KEY_FILE, so keyswitch has no effect. Delete that line unless it holds a real key on purpose."
+  else
+    ok "no key is stored here — apiKeyHelper reads it from $USER_KEY_FILE at runtime"
+  fi
 fi
 
 # ─── Shared team skills ───────────────────────────────────────────────────
@@ -1631,31 +1715,19 @@ $MARK_BEGIN
 # Claude Code against the SLAC AI Gateway. Installed by install-claude-lcls.sh.
 # Your plain \`claude\` is untouched and keeps using ~/.claude/.
 #
-# Runs the shared team binary, resolved at CALL time rather than baked to a
-# version, so a bump or a rollback on the deploy side reaches you with nothing
-# to re-run here. CLAUDE_LCLS_BIN overrides it if you deliberately set one; a
-# personal install never does.
+# Calls the shared launcher, which picks the shared binary (bin/current, so a
+# bump or rollback needs nothing here), drops ANTHROPIC_* and CLAUDE_CODE_*
+# variables other software left in your shell, puts the team's uv first on
+# PATH, and passes the shared gateway and model settings. The launcher is
+# updated centrally, so none of that needs a re-run of the installer.
+# Read its header for details: $LAUNCHER
 $FUNC_NAME() {
-    local _bin="\${CLAUDE_LCLS_BIN:-$SHARED_BIN}"
-    if [ ! -x "\$_bin" ]; then
-        echo "$FUNC_NAME: shared Claude Code binary is not runnable: \$_bin" >&2
+    if [ ! -x "$LAUNCHER" ]; then
+        echo "$FUNC_NAME: the shared launcher is not runnable: $LAUNCHER" >&2
         echo "$FUNC_NAME: check you are still in ps-users -- id -nG" >&2
         return 127
     fi
-    # Shared team tools (uv, docs-index) FIRST on PATH, so every \`uv\` this
-    # session runs -- a skill's or an agent's own -- is the team's uv, even if
-    # you have one yourself. Any copy already on PATH is removed first, so
-    # nesting claude-lcls keeps exactly one entry. Your shell's PATH is untouched.
-    local _rest=":\$PATH:"
-    while :; do
-        case "\$_rest" in
-            *":$SHARED_TOOLS_BIN:"*)
-                _rest="\${_rest%%:$SHARED_TOOLS_BIN:*}:\${_rest#*:$SHARED_TOOLS_BIN:}" ;;
-            *) break ;;
-        esac
-    done
-    _rest="\${_rest#:}"; _rest="\${_rest%:}"
-    PATH="$SHARED_TOOLS_BIN\${_rest:+:\$_rest}" CLAUDE_CONFIG_DIR="$LCLS_DIR" "\$_bin" "\$@"
+    CLAUDE_LCLS_DIR="$LCLS_DIR" "$LAUNCHER" "\$@"
 }
 # keyswitch: which of your keys (pass entries under $KS_SERVICE/) $FUNC_NAME reads
 # from $USER_KEY_FILE. Try: keyswitch -s $KS_SERVICE list
@@ -1751,9 +1823,10 @@ fi
 
 # Which uv a session will find, checked through the function text just
 # installed rather than a re-derivation of it: /bin/sh stands in for the Claude
-# binary and reports what `uv` resolves to under the PATH the function built.
+# binary and reports what `uv` resolves to under the PATH the launcher built.
+# CLAUDE_LCLS_SETTINGS= stops the launcher passing --settings, which sh rejects.
 if [ -x "$SHARED_TOOLS_BIN/uv" ]; then
-  SESSION_UV="$(bash -c "$SNIPPET"$'\n'"CLAUDE_LCLS_BIN=/bin/sh $FUNC_NAME -c 'command -v uv'" 2>/dev/null || true)"
+  SESSION_UV="$(bash -c "$SNIPPET"$'\n'"CLAUDE_LCLS_BIN=/bin/sh CLAUDE_LCLS_SETTINGS= $FUNC_NAME -c 'command -v uv'" 2>/dev/null || true)"
   if [ "$SESSION_UV" = "$SHARED_TOOLS_BIN/uv" ]; then
     ok "uv inside $FUNC_NAME sessions: $SESSION_UV"
   else
@@ -1761,14 +1834,31 @@ if [ -x "$SHARED_TOOLS_BIN/uv" ]; then
   fi
 fi
 
-# Run the same thing the shell function will run. This is the real test: it
-# exercises apiKeyHelper, the gateway, the model aliases, AND whether a separate
-# CLAUDE_CONFIG_DIR coexists with whatever auth state ~/.claude.json holds.
+# Run the shell function just installed, launcher and all. This is the real
+# test: it exercises the launcher, apiKeyHelper, the gateway, the model
+# aliases, AND whether a separate CLAUDE_CONFIG_DIR coexists with whatever auth
+# state ~/.claude.json holds.
+#
+# Bounded, and said out loud first. Claude Code retries a failed request with
+# backoff -- for a 401 it made 11 attempts over ~3 minutes on 2.1.311 -- and
+# prints nothing meanwhile, so the unbounded form of this step looked like a
+# hang (2026-11-20). CLAUDE_CODE_MAX_RETRIES=2 makes an auth error surface in
+# about two seconds (0 retries measured at 1 s) while still riding out one
+# transient blip; the launcher drops CLAUDE_CODE_* variables, so it is passed
+# through CLAUDE_LCLS_KEEP_ENV. timeout is the backstop for anything else.
+# </dev/null: a non-terminal stdin would otherwise be read as part of the prompt.
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-90}"
+echo "  … sending one test request through $FUNC_NAME (gives up after ${VERIFY_TIMEOUT}s)"
 set +e
-VERIFY_OUT="$(CLAUDE_CONFIG_DIR="$LCLS_DIR" "$CLAUDE_BIN" -p \
-              'Reply with exactly: PONG' --model sonnet 2>&1)"
+VERIFY_OUT="$(CLAUDE_LCLS_BIN="$CLAUDE_LCLS_BIN" CLAUDE_CODE_MAX_RETRIES=2 \
+              CLAUDE_LCLS_KEEP_ENV="CLAUDE_CODE_MAX_RETRIES" \
+              timeout "$VERIFY_TIMEOUT" bash -c "$SNIPPET"$'\n'"$FUNC_NAME -p 'Reply with exactly: PONG' --model sonnet" \
+              </dev/null 2>&1)"
 VERIFY_RC=$?
 set -e
+if [ "$VERIFY_RC" -eq 124 ]; then
+  VERIFY_OUT="(no answer within ${VERIFY_TIMEOUT}s)${VERIFY_OUT:+$'\n'$VERIFY_OUT}"
+fi
 
 if [ $VERIFY_RC -eq 0 ] && printf '%s' "$VERIFY_OUT" | grep -q 'PONG'; then
   ok "live completion succeeded through $BASE_URL"
@@ -1803,10 +1893,17 @@ else
   echo "          | curl -q -s -o /dev/null -w '%{http_code}\\n' -H @- $BASE_URL/v1/models" >&2
   echo "      200 = fine. 000 = off the SLAC network/VPN. 401/403 = key problem." >&2
   echo "      Which key that is:  $KEYSWITCH_BIN -s $KS_SERVICE current" >&2
+  echo "      If that key answers 200 here but the 401 above shows a key you do not" >&2
+  echo "      recognise (Received=xxxx****yyyy), env.ANTHROPIC_AUTH_TOKEN in" >&2
+  echo "      $LCLS_DIR/settings.json is being sent instead; delete it." >&2
   echo >&2
   echo "   3. Model errors naming an id without the 'us.anthropic.' prefix mean an" >&2
   echo "      ANTHROPIC_DEFAULT_*_MODEL entry is missing from" >&2
-  echo "      $LCLS_DIR/settings.json — all three are required." >&2
+  echo "      $SHARED_SETTINGS and" >&2
+  echo "      $LCLS_DIR/settings.json — all four are required." >&2
+  echo >&2
+  echo "   4. 'no answer within ${VERIFY_TIMEOUT}s' with no error: the gateway is slow" >&2
+  echo "      or unreachable from this node. Try again, or: $FUNC_NAME -p hello" >&2
   echo >&2
   echo "  Your own ~/.claude/ and ~/.claude.json were not touched either way." >&2
   echo "  Remove this install with: $0 --uninstall" >&2

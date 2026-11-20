@@ -16,6 +16,8 @@
   "// _13_": "opus is Opus 5.5 (and the default model) since 2026-10-13; needs 2.1.285+.",
   "// _14_": "Opus 5 stays reachable with --model us.anthropic.claude-opus-5[1m].",
   "// _14b_": "sonnet is Sonnet 5.5 and haiku is Haiku 5.5 since 2026-11-19; both need 2.1.311+.",
+  "// _14c_": "claude-lcls also passes claude/shared-settings.json with --settings (since 2026-11-20);",
+  "// _14d_": "its gateway URL and model ids win over the ones below. Keep the two files identical.",
   "// _15_": "apiKeyHelper: install-claude-lcls.sh writes the ABSOLUTE path of YOUR key file,",
   "// _16_": "$HOME/.config/slac-ai/key.dat (mode 600). Replace /YOUR/HOME by hand if you copy this.",
 
