@@ -1,0 +1,24 @@
+A1	live installer, poisoned shell	silent >=150 s after the uv line, then exit 1 with the 401 (bug reproduced)	exit 1; longest silence 187 s; 401 your****Here in output: yes	PASS
+A2	claude-lcls -p, poisoned shell (retries capped to show it fast)	is_error True with the 401 (bug reproduced)	-|True|Failed to authenticate. API Error: 401 LiteLLM Virtual Key e	PASS
+A3	claude-lcls -p with CLAUDE_CODE_USE_BEDROCK=1 from another tool	no answer within 25 s (bug reproduced)	-|no-answer|(empty)	PASS
+A4	old function inside a repo that pins opus to Opus 5 (no token)	us.anthropic.claude-opus-5 (repo overrides claude-lcls)	us.anthropic.claude-opus-5|False|PONG-2715	PASS
+B1	branch installer, poisoned shell	exit 0 and 'live completion succeeded'	exit 0; succeeded: yes	PASS
+B2	verification time; longest silence	verification < 20 s; no silence > 20 s	verification 0.6 s; longest silence 1 s	PASS
+B3	preflight names where the variable is set	warning naming ~/.bashrc:<line>	it is set at: ~/.bashrc:1 	PASS
+B4	rc files now call the shared launcher	exactly one block in .bashrc and .zshrc, calling the launcher	.bashrc blocks 1, .zshrc blocks 1, launcher calls in .bashrc 1	PASS
+C1	claude-lcls -p, poisoned shell	us.anthropic.claude-opus-5-5, is_error False	us.anthropic.claude-opus-5-5|False|PONG-5971	PASS
+C1b	stderr tells the user once	one 'ignoring ANTHROPIC_AUTH_TOKEN' line	1 line(s)	PASS
+C2	with CLAUDE_CODE_USE_BEDROCK=1	us.anthropic.claude-opus-5-5, is_error False	us.anthropic.claude-opus-5-5|False|PONG-9580	PASS
+C3	with a bogus ANTHROPIC_BASE_URL and an Opus 5 alias in the shell	us.anthropic.claude-opus-5-5, is_error False	us.anthropic.claude-opus-5-5|False|PONG-18606	PASS
+C4	inside the repo that pins opus to Opus 5	us.anthropic.claude-opus-5-5	us.anthropic.claude-opus-5-5|False|PONG-11083	PASS
+C5	opt-in: CLAUDE_LCLS_KEEP_ENV keeps the token on purpose	is_error True with the 401 (the opt-out is honoured)	-|True|Failed to authenticate. API Error: 401 LiteLLM Virtual Key e	PASS
+D1	plain claude-lcls with a stale settings.json	us.anthropic.claude-opus-5-5 (shared settings decide)	us.anthropic.claude-opus-5-5|False|PONG-7597	PASS
+E1	/proc of the running session (poisoned parent shell)	no ANTHROPIC_AUTH_TOKEN; config dir, PATH head, --settings as designed	4 of 4 properties hold; reply: slept	PASS
+E2	files on disk, parsed by a separate program	template carries every shared key; apiKeyHelper = own key file; one block per rc	shared keys missing from installer template: none;apiKeyHelper ok=True;.bashrc begin=1 end=1;.zshrc begin=1 end=1;	PASS
+E3	the key file itself, with curl (no Claude Code)	HTTP 200	HTTP 200	PASS
+F1	branch installer, new user, nothing in the shell	exit 0, verification < 20 s, no variable warnings	exit 0; verification 0.6 s; AUTH_TOKEN warning: no	PASS
+G1	branch installer with the token in settings.json	warning before the test; exit 1 within 15 s of starting it; hint names settings.json	exit 1; failed after 2.4 s; warning: yes; hint: yes	PASS
+H1	VERIFY_TIMEOUT=10 against a gateway that never answers	exit 1 with '(no answer within 10s)' about 10 s after the test starts	exit 1; failed after 10.0 s; message: yes	PASS
+J1	installer mode publishes three files	shared-settings.json 644, bin/claude-lcls 755, install-claude-lcls.sh 755, all ps-users	claude/shared-settings.json 644 ps-users;claude/bin/claude-lcls 755 ps-users;claude/install-claude-lcls.sh 755 ps-users;	PASS
+J2	verify: three files vs HEAD, shared settings vs template	8 keys 'same', no 'differs'	8 same, 0 differs	PASS
+J3	verify catches a drifted shared settings file	FAIL for ANTHROPIC_DEFAULT_OPUS_MODEL and 'differs from HEAD'	opus FAIL: yes; differs: yes	PASS
