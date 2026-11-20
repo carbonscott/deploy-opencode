@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-lcls home warning</title>
+<style>
+:root { --bg:#fbfbf9; --fg:#1d1d1b; --muted:#5f5f5a; --line:#e2e1dc; --code:#f1f0eb; --pass:#1f7a3a; --fail:#b3261e; --accent:#3557a8; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ecebe6; --muted:#a3a29c; --line:#34332f; --code:#22221f; --pass:#6fcf8a; --fail:#f28b82; --accent:#9db4f0; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:980px; margin:0 auto; padding:32px 16px 64px; }
+h1 { font-size:1.6rem; line-height:1.25; margin:0 0 8px; }
+h2 { font-size:1.15rem; margin:32px 0 8px; }
+.meta { color:var(--muted); font-size:.9rem; margin-bottom:20px; }
+.lede { font-size:1.05rem; }
+code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.85rem; }
+code { background:var(--code); padding:1px 4px; border-radius:4px; }
+pre { background:var(--code); padding:12px 14px; border-radius:6px; overflow-x:auto; white-space:pre-wrap; word-break:break-word; }
+.scroll { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:.88rem; }
+th, td { text-align:left; vertical-align:top; padding:7px 8px; border-bottom:1px solid var(--line); }
+th { color:var(--muted); font-weight:600; }
+td.id { font-family:ui-monospace,monospace; white-space:nowrap; }
+td.v { font-weight:700; } td.pass { color:var(--pass); } td.fail { color:var(--fail); }
+.badge { display:inline-block; font-weight:700; color:var(--pass); }
+ul { padding-left:20px; }
+a { color:var(--accent); }
+</style></head>
+<body><main>
+<h1>claude-lcls names a token in <code>~/.claude</code> when started from home</h1>
+<div class="meta">deploy-opencode PR #59 · 2026-11-20 · host sdfiana024 | binary 2.1.311 (Claude Code) | NEW md5 3f17628b | OLD md5 063ea7d6</div>
+<p class="lede">A client's <code>claude-lcls</code> failed with <code>401 … Received=your****Here</code>, but only when started in the home folder. Claude Code reads <code>&lt;launch folder&gt;/.claude/settings.json</code> as project settings, and <code>CLAUDE_CONFIG_DIR</code> does not move it. Started in home, that file is the personal <code>~/.claude/settings.json</code>. His held a gateway setup for plain <code>claude</code> with a placeholder <code>ANTHROPIC_AUTH_TOKEN</code> on line 4. The launcher now names that file and line on stderr. It changes nothing else. <span class="badge">10/10 checks pass.</span></p>
+
+<h2>The warning, as printed by check A1</h2>
+<pre>claude-lcls: ~/.claude/settings.json line 4 sets ANTHROPIC_AUTH_TOKEN. Started in your home folder, Claude Code reads that file as project settings and sends that token instead of your key from ~/.config/slac-ai/key.dat. Remove that entry, or start claude-lcls from another folder.</pre>
+
+<h2>Checks</h2>
+<p>Expected values were written into <code>proof.sh</code> before the run. B1 runs the launcher deployed before this change; A1–A9 run the branch launcher.</p>
+<div class="scroll"><table>
+<thead><tr><th>ID</th><th>Case</th><th>Expected</th><th>Measured</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td class="id">B1</td><td>BEFORE: old launcher, started in ~</td><td>no warning; key sent yourKeyHere (the client&#x27;s 401)</td><td>0 warning(s); key sent yourKeyHere</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A1</td><td>started in ~, token on line 4</td><td>1 warning naming ~/.claude/settings.json line 4</td><td>1 warning(s), 1 naming line 4</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A2</td><td>same run: behavior unchanged (warn only)</td><td>key sent yourKeyHere</td><td>key sent yourKeyHere</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A3</td><td>started in ~/work, same files</td><td>no warning; key sent fake-helper-key-0001</td><td>0 warning(s); key sent fake-helper-key-0001</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A4</td><td>started in ~ through a symlink to it</td><td>1 warning</td><td>1 warning(s)</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A5</td><td>stdout untouched: --version from ~</td><td>stdout &#x27;2.1.311 (Claude Code)&#x27;, exit 0</td><td>stdout &#x27;2.1.311 (Claude Code)&#x27;, exit 0</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A6</td><td>started in ~, no ~/.claude/settings.json</td><td>no warning</td><td>0 warning(s)</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A7</td><td>started in ~, template&#x27;s commented-out token key only</td><td>no warning</td><td>0 warning(s)</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A8</td><td>started in ~, token in settings.local.json (line 2)</td><td>1 warning naming settings.local.json line 2</td><td>1 warning(s), 1 naming it</td><td class="v pass">PASS</td></tr>
+<tr><td class="id">A9</td><td>bash -n on the launcher</td><td>exit 0</td><td>exit 0</td><td class="v pass">PASS</td></tr>
+</tbody></table></div>
+
+<h2>How it was tested</h2>
+<ul>
+<li>A fresh fake <code>HOME</code> under <code>/tmp</code> on sdfiana024, the shared binary 2.1.311, and a clean environment (<code>env -i</code>).</li>
+<li>The key is fake: <code>apiKeyHelper</code> prints <code>fake-helper-key-0001</code>.</li>
+<li>The published <code>shared-settings.json</code> with only the gateway URL swapped for a local listener. It answers 401 and logs the <code>Authorization</code> header, so each check sees which key Claude Code sent. Nothing reached the gateway.</li>
+<li>The client's <code>~/.claude/settings.json</code> is reproduced with the same keys and line numbers (token on line 4); the placeholder value is illustrative.</li>
+</ul>
+
+<h2>Not covered</h2>
+<ul>
+<li>Interactive sessions: every run is <code>-p</code> or <code>--version</code>. The warning is printed before the binary starts, so the mode does not matter to it.</li>
+<li>The installer change is one added line in its failure text, checked with <code>bash -n</code> only.</li>
+</ul>
+
+<h2>Rerun</h2>
+<pre>NEW=/sdf/group/lcls/ds/dm/apps/dev/claude/bin/claude-lcls bash proof.sh out/
+# add OLD=&lt;previous launcher&gt; to include the BEFORE check</pre>
+<p>Files: <code>proof.sh</code>, <code>checks-branch.tsv</code>, <code>run-branch.txt</code> (console), <code>A1-stderr-branch.txt</code>.</p>
+</main></body></html>

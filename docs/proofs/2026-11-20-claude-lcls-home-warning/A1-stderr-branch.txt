@@ -1,0 +1,1 @@
+claude-lcls: ~/.claude/settings.json line 4 sets ANTHROPIC_AUTH_TOKEN. Started in your home folder, Claude Code reads that file as project settings and sends that token instead of your key from ~/.config/slac-ai/key.dat. Remove that entry, or start claude-lcls from another folder.

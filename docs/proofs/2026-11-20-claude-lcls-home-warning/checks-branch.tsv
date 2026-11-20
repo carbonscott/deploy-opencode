@@ -1,0 +1,11 @@
+id	what	expected	measured	verdict
+B1	BEFORE: old launcher, started in ~	no warning; key sent yourKeyHere (the client's 401)	0 warning(s); key sent yourKeyHere	PASS
+A1	started in ~, token on line 4	1 warning naming ~/.claude/settings.json line 4	1 warning(s), 1 naming line 4	PASS
+A2	same run: behavior unchanged (warn only)	key sent yourKeyHere	key sent yourKeyHere	PASS
+A3	started in ~/work, same files	no warning; key sent fake-helper-key-0001	0 warning(s); key sent fake-helper-key-0001	PASS
+A4	started in ~ through a symlink to it	1 warning	1 warning(s)	PASS
+A5	stdout untouched: --version from ~	stdout '2.1.311 (Claude Code)', exit 0	stdout '2.1.311 (Claude Code)', exit 0	PASS
+A6	started in ~, no ~/.claude/settings.json	no warning	0 warning(s)	PASS
+A7	started in ~, template's commented-out token key only	no warning	0 warning(s)	PASS
+A8	started in ~, token in settings.local.json (line 2)	1 warning naming settings.local.json line 2	1 warning(s), 1 naming it	PASS
+A9	bash -n on the launcher	exit 0	exit 0	PASS
