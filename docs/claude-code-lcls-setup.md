@@ -365,35 +365,67 @@ Your existing `~/.claude/` is not read, not written, and not modified.
 
 ```bash
 claude-lcls() {
-  local _bin="${CLAUDE_LCLS_BIN:-/sdf/group/lcls/ds/dm/apps/dev/claude/bin/current}"
-  if [ ! -x "$_bin" ]; then
-    echo "claude-lcls: shared Claude Code binary is not runnable: $_bin" >&2
+  local _l=/sdf/group/lcls/ds/dm/apps/dev/claude/bin/claude-lcls
+  if [ ! -x "$_l" ]; then
+    echo "claude-lcls: the shared launcher is not runnable: $_l" >&2
     echo "claude-lcls: check you are still in ps-users -- id -nG" >&2
     return 127
   fi
-  local _rest=":$PATH:"
-  while :; do
-    case "$_rest" in
-      *":/sdf/group/lcls/ds/dm/apps/dev/bin:"*)
-        _rest="${_rest%%:/sdf/group/lcls/ds/dm/apps/dev/bin:*}:${_rest#*:/sdf/group/lcls/ds/dm/apps/dev/bin:}" ;;
-      *) break ;;
-    esac
-  done
-  _rest="${_rest#:}"; _rest="${_rest%:}"
-  PATH="/sdf/group/lcls/ds/dm/apps/dev/bin${_rest:+:$_rest}" \
-    CLAUDE_CONFIG_DIR="$HOME/.claude-lcls" "$_bin" "$@"
+  CLAUDE_LCLS_DIR="$HOME/.claude-lcls" "$_l" "$@"
 }
 ```
 
 This is what `install-claude-lcls.sh` writes for you; the manual form is here
-only for people who would rather not run the installer.
+only for people who would rather not run the installer. Scripts and other tools
+(Cogito, batch jobs) can run the launcher directly instead of the function.
 
-Three details are deliberate. `bin/current` is resolved **at call time**, not
-frozen into the function, so a version bump or rollback on the deploy side
-reaches you with nothing to re-run. There is no fallback to `command claude` or
-to `~/.local/share/claude/versions/*` — see
-[The shared binary](#the-shared-binary) for why. And the shared tools directory
-goes **first** on `PATH` — see below.
+**Since 2026-11-20 the function only calls a shared launcher**
+(`claude/claude-lcls` in this repo, published to `dev/claude/bin/claude-lcls`).
+Everything below happens in the launcher, which is updated centrally, so none
+of it needs a re-run of the installer:
+
+- **The binary.** `bin/current` is resolved **at call time**, so a version bump
+  or rollback on the deploy side reaches you with nothing to re-run. There is
+  no fallback to `command claude` or to `~/.local/share/claude/versions/*` —
+  see [The shared binary](#the-shared-binary) for why. `CLAUDE_LCLS_BIN`
+  overrides it for testing; export it, or put it in front of the command.
+- **Your shell's `ANTHROPIC_*` and `CLAUDE_CODE_*` variables are dropped.**
+  See [What other software cannot change](#what-other-software-cannot-change).
+- **The shared tools directory goes first on `PATH`** — see below.
+- **Shared settings.** The launcher passes
+  `dev/claude/shared-settings.json` with `--settings`. It holds the gateway URL
+  and the model aliases, and it wins over `~/.claude-lcls/settings.json`. So a
+  model move is one central edit, not a re-run for every user.
+
+### What other software cannot change
+
+Other tools on S3DF set Claude Code variables for their own use — Cogito,
+other gateways, Bedrock setups, a copied tutorial. Measured on 2.1.311
+(2026-11-20):
+
+| Where a setting comes from | Beats `~/.claude-lcls/settings.json`? | Beats the launcher's `--settings`? |
+|---|---|---|
+| Shell variable that `settings.json` also sets (`ANTHROPIC_BASE_URL`) | No | No |
+| Shell variable that `settings.json` does not set (`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`) | **Yes** | **Yes** |
+| A repo's `.claude/settings.json` | **Yes** | No |
+
+A placeholder `ANTHROPIC_AUTH_TOKEN` in someone's shell sent every request with
+that placeholder instead of their key (`401 ... Received=your****Here`), and
+`CLAUDE_CODE_USE_BEDROCK=1` hung a session. So the launcher drops **every**
+`ANTHROPIC_*` and `CLAUDE_CODE_*` variable it inherits, and says so on stderr
+when it drops `ANTHROPIC_AUTH_TOKEN`. The `--settings` file covers the third
+row: a repo cannot point `claude-lcls` at another gateway or model.
+
+To set such a variable for `claude-lcls` on purpose, put it in the `env` block
+of `~/.claude-lcls/settings.json` (re-runs keep keys the installer does not
+define), or name it for one run:
+`CLAUDE_LCLS_KEEP_ENV="CLAUDE_CODE_MAX_OUTPUT_TOKENS" claude-lcls`.
+
+Two things stay yours: a `model` key in `~/.claude-lcls/settings.json` (your
+default model), and your own `--settings` flag, which **replaces** the shared
+file (Claude Code keeps only the last `--settings`). A token pasted into
+`settings.json` as `env.ANTHROPIC_AUTH_TOKEN` still wins over your key file;
+the installer warns when it finds one.
 
 ### Shared tools on `PATH` (this is where `uv` comes from)
 
@@ -627,10 +659,10 @@ The group ownership the shared target carries is settled in
   It runs a command and uses its stdout as the credential, so
   `cat ~/.config/slac-ai/key.dat` (as an absolute path) gives you exactly "read
   the key from its path at runtime".
-- You can also export `ANTHROPIC_AUTH_TOKEN="$(cat ~/.config/slac-ai/key.dat)"` in your
-  shell rc instead of putting it in `settings.json` — this keeps the secret out
-  of any file, but leaks it into your process environment (`/proc/<pid>/environ`,
-  `ps -E` on some systems) and into shell history if typed interactively.
+- **Do not export `ANTHROPIC_AUTH_TOKEN` in your shell for `claude-lcls`.** Since
+  2026-11-20 the launcher drops it (see
+  [What other software cannot change](#what-other-software-cannot-change)), and
+  any other Claude Code you run would send it instead of its own key.
 
 **Why a file and not a pasted token.** A key file can change under a running
 session: `keyswitch` rewrites it, and Claude Code runs `apiKeyHelper` again after

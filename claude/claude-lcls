@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# claude-lcls: Claude Code on the SLAC AI Gateway, for ps-users on S3DF.
+#
+# The `claude-lcls` shell function that install-claude-lcls.sh writes into
+# ~/.bashrc and ~/.zshrc calls this script, and any other tool (Cogito, a
+# script, a batch job) can run it directly. It is published next to the binary
+# it runs, at /sdf/group/lcls/ds/dm/apps/dev/claude/bin/claude-lcls, by
+# tools/claude-binary (`installer` mode). A change here reaches every user at
+# once, with no installer re-run.
+#
+# Its job is to make a claude-lcls session the same no matter which shell it
+# starts from or which directory it starts in:
+#
+#   1. Binary. $CLAUDE_LCLS_BIN if set (testing, an incident pin), else the
+#      shared bin/current. Never a personal install.
+#
+#   2. Environment. Every ANTHROPIC_* and CLAUDE_CODE_* variable inherited
+#      from the caller is dropped. Measured on 2.1.311 (2026-11-20): a shell
+#      variable loses to settings.json when both set the same name, but WINS
+#      when settings.json does not set it. A stray ANTHROPIC_AUTH_TOKEN
+#      replaced the key file with a placeholder (401, then ~3 minutes of
+#      silent retries), and CLAUDE_CODE_USE_BEDROCK=1 hung a session. Other
+#      software sets such variables for its own use; claude-lcls should not
+#      inherit them. To set one for claude-lcls, put it in the "env" block of
+#      ~/.claude-lcls/settings.json (the installer keeps keys it does not
+#      define), or name it in CLAUDE_LCLS_KEEP_ENV.
+#
+#   3. PATH. The shared tools directory (uv) goes first, exactly once.
+#
+#   4. Config. CLAUDE_CONFIG_DIR=$CLAUDE_LCLS_DIR, default ~/.claude-lcls.
+#
+#   5. Shared settings. --settings shared-settings.json, which holds the
+#      gateway URL and the model aliases. Command-line settings outrank both
+#      ~/.claude-lcls/settings.json and a project's .claude/settings.json
+#      (measured), so moving a model alias is one edit to that file, and a repo
+#      cannot point claude-lcls at another gateway or model. Claude Code keeps
+#      only the LAST --settings, so passing your own replaces this one; to pick
+#      a default model of your own, set "model" in settings.json instead.
+#
+# Environment read here (all optional):
+#   CLAUDE_LCLS_DIR       config directory; default $HOME/.claude-lcls
+#   CLAUDE_LCLS_BIN       Claude Code binary; default the shared bin/current
+#   CLAUDE_LCLS_SETTINGS  shared settings file; set but empty = pass none
+#   CLAUDE_LCLS_KEEP_ENV  space-separated variable names to keep in step 2
+
+set -u
+
+DEV=/sdf/group/lcls/ds/dm/apps/dev
+ME=claude-lcls
+
+BIN="${CLAUDE_LCLS_BIN:-$DEV/claude/bin/current}"
+CFG="${CLAUDE_LCLS_DIR:-$HOME/.claude-lcls}"
+# No colon: an empty CLAUDE_LCLS_SETTINGS means "pass none", unset means default.
+SHARED_SETTINGS="${CLAUDE_LCLS_SETTINGS-$DEV/claude/shared-settings.json}"
+TOOLS="$DEV/bin"
+
+if [ ! -x "$BIN" ]; then
+    echo "$ME: shared Claude Code binary is not runnable: $BIN" >&2
+    echo "$ME: check you are still in ps-users -- id -nG" >&2
+    exit 127
+fi
+
+# 2. Environment. compgen -e lists exported names only, and a name can hold
+# nothing but [A-Za-z0-9_], so the word splitting below is safe.
+keep=" ${CLAUDE_LCLS_KEEP_ENV:-} "
+for name in $(compgen -e); do
+    case "$name" in
+        ANTHROPIC_*|CLAUDE_CODE_*) ;;
+        *) continue ;;
+    esac
+    case "$keep" in *" $name "*) continue ;; esac
+    # Say so for the one that silently replaced people's key.
+    if [ "$name" = ANTHROPIC_AUTH_TOKEN ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+        echo "$ME: ignoring ANTHROPIC_AUTH_TOKEN from your shell; your key comes from ~/.config/slac-ai/key.dat (keyswitch -s slac-ai list). Remove the variable from your shell startup files to stop this message." >&2
+    fi
+    unset "$name"
+done
+
+# 3. PATH: remove every copy of $TOOLS, then put one in front.
+rest=":$PATH:"
+while :; do
+    case "$rest" in
+        *":$TOOLS:"*) rest="${rest%%:"$TOOLS":*}:${rest#*:"$TOOLS":}" ;;
+        *) break ;;
+    esac
+done
+rest="${rest#:}"; rest="${rest%:}"
+export PATH="$TOOLS${rest:+:$rest}"
+
+# 4. Config.
+export CLAUDE_CONFIG_DIR="$CFG"
+
+# 5. Shared settings. A missing file is reported, not fatal: settings.json
+# still carries the same keys from the last installer run.
+args=()
+if [ -n "$SHARED_SETTINGS" ]; then
+    if [ -r "$SHARED_SETTINGS" ]; then
+        args=(--settings "$SHARED_SETTINGS")
+    else
+        echo "$ME: shared settings not readable, using only $CFG/settings.json: $SHARED_SETTINGS" >&2
+    fi
+fi
+
+exec "$BIN" ${args[@]+"${args[@]}"} "$@"
