@@ -37,6 +37,17 @@
 #      only the LAST --settings, so passing your own replaces this one; to pick
 #      a default model of your own, set "model" in settings.json instead.
 #
+#   6. Home folder. Claude Code reads <launch folder>/.claude/settings.json
+#      and settings.local.json as PROJECT settings, and CLAUDE_CONFIG_DIR does
+#      not move them. Started in $HOME, that is the user's personal
+#      ~/.claude/settings.json. Measured on 2.1.311 (2026-11-20): a gateway
+#      setup there for plain `claude`, with a placeholder ANTHROPIC_AUTH_TOKEN,
+#      was sent instead of the key file (401 Received=your****Here), from the
+#      home folder only. The --settings file outranks it but sets no token, so
+#      it cannot cover this. Nothing is skipped -- a home folder that behaves
+#      differently from every other folder would be its own surprise -- but
+#      the file and line are named on stderr.
+#
 # Environment read here (all optional):
 #   CLAUDE_LCLS_DIR       config directory; default $HOME/.claude-lcls
 #   CLAUDE_LCLS_BIN       Claude Code binary; default the shared bin/current
@@ -99,6 +110,17 @@ if [ -n "$SHARED_SETTINGS" ]; then
     else
         echo "$ME: shared settings not readable, using only $CFG/settings.json: $SHARED_SETTINGS" >&2
     fi
+fi
+
+# 6. Home folder. `-ef` compares device and inode, so a symlinked $HOME still
+# matches. The quote directly before the name skips the template's
+# "// ANTHROPIC_AUTH_TOKEN" comment key, as the installer's check does.
+if [ . -ef "$HOME" ]; then
+    for f in "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json"; do
+        line=$(grep -n '"ANTHROPIC_AUTH_TOKEN"' "$f" 2>/dev/null | head -n 1 | cut -d: -f1)
+        [ -n "$line" ] || continue
+        echo "$ME: ~/.claude/${f##*/} line $line sets ANTHROPIC_AUTH_TOKEN. Started in your home folder, Claude Code reads that file as project settings and sends that token instead of your key from ~/.config/slac-ai/key.dat. Remove that entry, or start $ME from another folder." >&2
+    done
 fi
 
 exec "$BIN" ${args[@]+"${args[@]}"} "$@"

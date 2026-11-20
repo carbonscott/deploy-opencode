@@ -1896,6 +1896,7 @@ else
   echo "      If that key answers 200 here but the 401 above shows a key you do not" >&2
   echo "      recognise (Received=xxxx****yyyy), env.ANTHROPIC_AUTH_TOKEN in" >&2
   echo "      $LCLS_DIR/settings.json is being sent instead; delete it." >&2
+  echo "      Run from your home folder, ~/.claude/settings.json counts too." >&2
   echo >&2
   echo "   3. Model errors naming an id without the 'us.anthropic.' prefix mean an" >&2
   echo "      ANTHROPIC_DEFAULT_*_MODEL entry is missing from" >&2

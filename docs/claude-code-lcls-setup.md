@@ -301,6 +301,10 @@ to the `env` block:
 "ANTHROPIC_AUTH_TOKEN": "<your key>"
 ```
 
+If you also use `claude-lcls`, keep `apiKeyHelper` instead: started in your
+home folder, `claude-lcls` reads this file too, and a pasted token there wins
+over your key file (see [Your home folder's `.claude/`](#your-home-folders-claude)).
+
 ### 3. Verify
 
 ```bash
@@ -359,7 +363,10 @@ chmod 700 ~/.claude-lcls
 chmod og-rwx ~/.claude-lcls/settings.json
 ```
 
-Your existing `~/.claude/` is not read, not written, and not modified.
+Your existing `~/.claude/` is not written and not modified. It is read in one
+case: started in your home folder, Claude Code treats `~/.claude/settings.json`
+as that folder's project settings. See
+[Your home folder's `.claude/`](#your-home-folders-claude).
 
 **2. Add a launcher function to your shell rc** (`~/.bashrc`, `~/.zshrc`):
 
@@ -396,6 +403,9 @@ of it needs a re-run of the installer:
   `dev/claude/shared-settings.json` with `--settings`. It holds the gateway URL
   and the model aliases, and it wins over `~/.claude-lcls/settings.json`. So a
   model move is one central edit, not a re-run for every user.
+- **A warning when started in your home folder** with a token in
+  `~/.claude/settings.json`. See
+  [Your home folder's `.claude/`](#your-home-folders-claude).
 
 ### What other software cannot change
 
@@ -408,6 +418,7 @@ other gateways, Bedrock setups, a copied tutorial. Measured on 2.1.311
 | Shell variable that `settings.json` also sets (`ANTHROPIC_BASE_URL`) | No | No |
 | Shell variable that `settings.json` does not set (`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`) | **Yes** | **Yes** |
 | A repo's `.claude/settings.json` | **Yes** | No |
+| `~/.claude/settings.json`, when started in your home folder | **Yes** | No |
 
 A placeholder `ANTHROPIC_AUTH_TOKEN` in someone's shell sent every request with
 that placeholder instead of their key (`401 ... Received=your****Here`), and
@@ -426,6 +437,33 @@ default model), and your own `--settings` flag, which **replaces** the shared
 file (Claude Code keeps only the last `--settings`). A token pasted into
 `settings.json` as `env.ANTHROPIC_AUTH_TOKEN` still wins over your key file;
 the installer warns when it finds one.
+
+### Your home folder's `.claude/`
+
+Claude Code reads `.claude/settings.json` and `.claude/settings.local.json` in
+the folder you start it from as **project settings**. This is built in:
+`CLAUDE_CONFIG_DIR` moves only your user settings, and no setting or variable
+turns it off. Started in your home folder — where ssh lands — the project
+settings are your personal `~/.claude/settings.json`.
+
+Most of that file does no harm to `claude-lcls`: the shared `--settings` file
+outranks its gateway URL and model aliases. A token does. Measured on 2.1.311
+(2026-11-20): a gateway setup for plain `claude` in `~/.claude/settings.json`,
+with a placeholder `ANTHROPIC_AUTH_TOKEN` (the pasted form of
+[Quick setup](#2-choose-an-auth-method)), turned every `claude-lcls` request
+started from home into `401 ... Received=your****Here`. The same session
+started in any other folder worked.
+
+The launcher does not skip the file, since a home folder that behaved
+differently from every other folder would be its own surprise. It names it
+instead, on every start from home:
+
+```
+claude-lcls: ~/.claude/settings.json line 4 sets ANTHROPIC_AUTH_TOKEN. Started in your home folder, Claude Code reads that file as project settings and sends that token instead of your key from ~/.config/slac-ai/key.dat. Remove that entry, or start claude-lcls from another folder.
+```
+
+Remove the entry (or use `apiKeyHelper` there, which reads the same key file),
+or start `claude-lcls` somewhere else.
 
 ### Shared tools on `PATH` (this is where `uv` comes from)
 
