@@ -33,7 +33,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style></head><body>
 <div class="wrap">
   <header>
-    <div class="eyebrow">carbonscott/deploy-opencode · 1 proof</div>
+    <div class="eyebrow">carbonscott/deploy-opencode · 2 proofs</div>
     <h1>deploy-opencode Proofs</h1>
     <p>End-to-end evidence attached to pull requests: each page carries a recorded run, checks with expected values written before the run, an independent read-back and an audit trail. The scripts and raw results live beside each proof in <a href="https://github.com/carbonscott/deploy-opencode/tree/main/docs/proofs">docs/proofs</a>.</p>
   </header>
@@ -44,6 +44,13 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <p>A shell exporting ANTHROPIC_AUTH_TOKEN=yourKeyHere made the live installer sit silent for three minutes and every claude-lcls request fail with a 401. The new launcher and installer pass in that same shell, and also hold up against a Bedrock switch, a bogus gateway URL, a repo pinning Opus 5 and a stale settings.json.</p>
       <p class="result">24/24 PASS (corrected re-run) · recorded take: 24 PASS, 3 test-design FAIL re-checked PASS</p>
       <p class="links"><a href="2026-11-20-claude-lcls-launcher/proof.html">Open proof</a> · <a href="https://github.com/carbonscott/deploy-opencode/pull/57">PR #57</a> · <a href="https://github.com/carbonscott/deploy-opencode/tree/main/docs/proofs/2026-11-20-claude-lcls-launcher">Scripts and results</a></p>
+    </article>
+    <article class="proof">
+      <div class="meta"><time datetime="2026-11-20">2026-11-20</time><span>sdfiana024</span></div>
+      <h2><a href="2026-11-20-claude-lcls-home-warning/proof.html">claude-lcls names a token in ~/.claude when started from home</a></h2>
+      <p>Started in the home folder, Claude Code reads ~/.claude/settings.json as project settings, so a placeholder ANTHROPIC_AUTH_TOKEN there produced a 401. The launcher now names the file and line on stderr and changes nothing else; started anywhere else, or without such a token, it stays silent.</p>
+      <p class="result">10/10 PASS</p>
+      <p class="links"><a href="2026-11-20-claude-lcls-home-warning/proof.html">Open proof</a> · <a href="https://github.com/carbonscott/deploy-opencode/pull/59">PR #59</a> · <a href="https://github.com/carbonscott/deploy-opencode/tree/main/docs/proofs/2026-11-20-claude-lcls-home-warning">Scripts and results</a></p>
     </article>
   </section>
 </div>

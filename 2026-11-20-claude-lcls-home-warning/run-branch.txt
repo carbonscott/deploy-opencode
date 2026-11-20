@@ -1,0 +1,12 @@
+host sdfiana024 | binary 2.1.311 (Claude Code) | NEW md5 3f17628b | OLD md5 063ea7d6
+B1   PASS BEFORE: old launcher, started in ~ | expected: no warning; key sent yourKeyHere (the client's 401) | measured: 0 warning(s); key sent yourKeyHere
+A1   PASS started in ~, token on line 4 | expected: 1 warning naming ~/.claude/settings.json line 4 | measured: 1 warning(s), 1 naming line 4
+A2   PASS same run: behavior unchanged (warn only) | expected: key sent yourKeyHere | measured: key sent yourKeyHere
+A3   PASS started in ~/work, same files | expected: no warning; key sent fake-helper-key-0001 | measured: 0 warning(s); key sent fake-helper-key-0001
+A4   PASS started in ~ through a symlink to it | expected: 1 warning | measured: 1 warning(s)
+A5   PASS stdout untouched: --version from ~ | expected: stdout '2.1.311 (Claude Code)', exit 0 | measured: stdout '2.1.311 (Claude Code)', exit 0
+A6   PASS started in ~, no ~/.claude/settings.json | expected: no warning | measured: 0 warning(s)
+A7   PASS started in ~, template's commented-out token key only | expected: no warning | measured: 0 warning(s)
+A8   PASS started in ~, token in settings.local.json (line 2) | expected: 1 warning naming settings.local.json line 2 | measured: 1 warning(s), 1 naming it
+A9   PASS bash -n on the launcher | expected: exit 0 | measured: exit 0
+RESULT 10 PASS, 0 FAIL

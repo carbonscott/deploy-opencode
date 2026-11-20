@@ -1,0 +1,8 @@
+{
+  "title": "claude-lcls names a token in ~/.claude when started from home",
+  "date": "2026-11-20",
+  "pr": 59,
+  "host": "sdfiana024",
+  "result": "10/10 PASS",
+  "summary": "Started in the home folder, Claude Code reads ~/.claude/settings.json as project settings, so a placeholder ANTHROPIC_AUTH_TOKEN there produced a 401. The launcher now names the file and line on stderr and changes nothing else; started anywhere else, or without such a token, it stays silent."
+}
