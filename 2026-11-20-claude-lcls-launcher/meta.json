@@ -1,0 +1,8 @@
+{
+  "title": "claude-lcls launcher ignores other software's variables",
+  "date": "2026-11-20",
+  "pr": 57,
+  "host": "sdfiana024",
+  "result": "24/24 PASS (corrected re-run) · recorded take: 24 PASS, 3 test-design FAIL re-checked PASS",
+  "summary": "A shell exporting ANTHROPIC_AUTH_TOKEN=yourKeyHere made the live installer sit silent for three minutes and every claude-lcls request fail with a 401. The new launcher and installer pass in that same shell, and also hold up against a Bedrock switch, a bogus gateway URL, a repo pinning Opus 5 and a stale settings.json."
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>deploy-opencode Proofs</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* One reading column of proof records, newest first; same type and palette as the proof pages. */
+:root {
+  --bg: #F4F6F8; --surface: #FFFFFF; --fg: #141A22; --muted: #566170; --line: #D8DEE6; --accent: #1D5BB8; --pass: #1B7442;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0D1116; --surface: #141A21; --fg: #E3E8EE; --muted: #98A3B1; --line: #28313C; --accent: #7DB0FF; --pass: #5DC98C; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0D1116; --surface: #141A21; --fg: #E3E8EE; --muted: #98A3B1; --line: #28313C; --accent: #7DB0FF; --pass: #5DC98C; color-scheme: dark }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 32px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px; }
+header { display: grid; gap: 8px; }
+.eyebrow { font: 500 0.78rem/1.4 var(--mono); color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 70ch; }
+.list { display: grid; gap: 14px; }
+.proof { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; display: grid; gap: 6px; min-width: 0; }
+.proof h2 { font-size: 1.15rem; margin: 0; line-height: 1.3; }
+.meta { font: 0.8rem/1.4 var(--mono); color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.result { font: 0.86rem/1.5 var(--mono); color: var(--pass); }
+.links { font-size: 0.9rem; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.empty { color: var(--muted); }
+</style></head><body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">carbonscott/deploy-opencode · 1 proof</div>
+    <h1>deploy-opencode Proofs</h1>
+    <p>End-to-end evidence attached to pull requests: each page carries a recorded run, checks with expected values written before the run, an independent read-back and an audit trail. The scripts and raw results live beside each proof in <a href="https://github.com/carbonscott/deploy-opencode/tree/main/docs/proofs">docs/proofs</a>.</p>
+  </header>
+  <section class="list" aria-label="Proofs, newest first">
+    <article class="proof">
+      <div class="meta"><time datetime="2026-11-20">2026-11-20</time><span>sdfiana024</span></div>
+      <h2><a href="2026-11-20-claude-lcls-launcher/proof.html">claude-lcls launcher ignores other software&#x27;s variables</a></h2>
+      <p>A shell exporting ANTHROPIC_AUTH_TOKEN=yourKeyHere made the live installer sit silent for three minutes and every claude-lcls request fail with a 401. The new launcher and installer pass in that same shell, and also hold up against a Bedrock switch, a bogus gateway URL, a repo pinning Opus 5 and a stale settings.json.</p>
+      <p class="result">24/24 PASS (corrected re-run) · recorded take: 24 PASS, 3 test-design FAIL re-checked PASS</p>
+      <p class="links"><a href="2026-11-20-claude-lcls-launcher/proof.html">Open proof</a> · <a href="https://github.com/carbonscott/deploy-opencode/pull/57">PR #57</a> · <a href="https://github.com/carbonscott/deploy-opencode/tree/main/docs/proofs/2026-11-20-claude-lcls-launcher">Scripts and results</a></p>
+    </article>
+  </section>
+</div>
+</body></html>
